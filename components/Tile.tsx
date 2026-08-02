@@ -7,6 +7,7 @@ type TileProps = {
   tile: TileType;
   selected: boolean;
   disabled: boolean;
+  exploding: boolean;
   onClick: () => void;
 };
 
@@ -14,9 +15,10 @@ export default function Tile({
   tile,
   selected,
   disabled,
+  exploding,
   onClick,
 }: TileProps) {
-  const isCup = tile.special === "cup" || tile.ball === "🏆";
+  const isCup = tile.special === "cup";
 
   return (
     <motion.button
@@ -27,17 +29,33 @@ export default function Tile({
       layoutId={tile.id}
       initial={{
         opacity: 0,
-        y: -35,
+        y: -40,
         scale: 0.7,
       }}
-      animate={{
-        opacity: 1,
-        y: selected ? -5 : 0,
-        scale: selected ? 1.12 : 1,
-        rotate: isCup ? [0, -4, 4, -2, 2, 0] : 0,
-      }}
+      animate={
+        exploding
+          ? {
+              opacity: [1, 1, 0],
+              scale: [1, 1.35, 0],
+              rotate: [0, -12, 12, 0],
+              filter: [
+                "brightness(1)",
+                "brightness(2.5)",
+                "brightness(1)",
+              ],
+            }
+          : {
+              opacity: 1,
+              y: selected ? -5 : 0,
+              scale: selected ? 1.12 : 1,
+              rotate: isCup
+                ? [0, -4, 4, -2, 2, 0]
+                : 0,
+              filter: "brightness(1)",
+            }
+      }
       whileHover={
-        disabled
+        disabled || exploding
           ? undefined
           : {
               y: -4,
@@ -45,41 +63,48 @@ export default function Tile({
             }
       }
       whileTap={
-        disabled
+        disabled || exploding
           ? undefined
           : {
               scale: 0.88,
               rotate: -3,
             }
       }
-      transition={{
-        layout: {
-          type: "spring",
-          stiffness: 500,
-          damping: 32,
-        },
-        opacity: {
-          duration: 0.2,
-        },
-        y: {
-          type: "spring",
-          stiffness: 500,
-          damping: 24,
-        },
-        scale: {
-          type: "spring",
-          stiffness: 500,
-          damping: 22,
-        },
-        rotate: {
-          duration: 1.4,
-          repeat: isCup ? Infinity : 0,
-          repeatDelay: 0.7,
-        },
-      }}
+      transition={
+        exploding
+          ? {
+              duration: 0.3,
+              ease: "easeOut",
+            }
+          : {
+              layout: {
+                type: "spring",
+                stiffness: 500,
+                damping: 32,
+              },
+              opacity: {
+                duration: 0.2,
+              },
+              y: {
+                type: "spring",
+                stiffness: 500,
+                damping: 24,
+              },
+              scale: {
+                type: "spring",
+                stiffness: 500,
+                damping: 22,
+              },
+              rotate: {
+                duration: 1.4,
+                repeat: isCup ? Infinity : 0,
+                repeatDelay: 0.7,
+              },
+            }
+      }
       className={`
-        flex h-10 w-10 items-center justify-center
-        rounded-xl border text-2xl shadow-lg
+        relative flex h-10 w-10 items-center justify-center
+        overflow-visible rounded-xl border text-2xl shadow-lg
         sm:h-14 sm:w-14 sm:text-3xl
 
         ${
@@ -92,14 +117,32 @@ export default function Tile({
 
         ${
           disabled
-            ? "cursor-not-allowed opacity-50"
+            ? "cursor-not-allowed"
             : "cursor-pointer"
         }
       `}
     >
+      {exploding && (
+        <motion.span
+          className="pointer-events-none absolute inset-0 rounded-full bg-yellow-300"
+          initial={{
+            opacity: 0.8,
+            scale: 0.3,
+          }}
+          animate={{
+            opacity: 0,
+            scale: 2,
+          }}
+          transition={{
+            duration: 0.3,
+          }}
+        />
+      )}
+
       <motion.span
+        className="relative z-10"
         animate={
-          isCup
+          isCup && !exploding
             ? {
                 filter: [
                   "drop-shadow(0 0 2px rgba(250,204,21,0.4))",

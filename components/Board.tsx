@@ -11,18 +11,26 @@ import {
   findMatchGroups,
   findMatches,
 } from "../utils/match";
+import ComboPopup from "./ComboPopup";
 import ScorePanel from "./ScorePanel";
 import Tile from "./Tile";
 
 const BOARD_SIZE = 8;
 const STARTING_MOVES = 30;
 const POINTS_PER_BALL = 10;
+const EXPLOSION_DURATION = 320;
 
 type ResolveResult = {
   board: TileType[];
   scoreGain: number;
   comboCount: number;
 };
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
 
 function resolveBoard(
   startingBoard: TileType[],
@@ -51,14 +59,15 @@ function resolveBoard(
       });
 
       if (group.indices.length === 4) {
-        const preferredIsInGroup =
+        let cupIndex = group.indices[1];
+
+        if (
           isFirstRound &&
           preferredCupIndex !== undefined &&
-          group.indices.includes(preferredCupIndex);
-
-        const cupIndex = preferredIsInGroup
-          ? preferredCupIndex
-          : group.indices[1];
+          group.indices.includes(preferredCupIndex)
+        ) {
+          cupIndex = preferredCupIndex;
+        }
 
         cupIndices.add(cupIndex);
       }
@@ -101,6 +110,10 @@ export default function Board() {
   const [moves, setMoves] = useState(STARTING_MOVES);
   const [actionText, setActionText] = useState("");
   const [pointsText, setPointsText] = useState("");
+  const [explodingIds, setExplodingIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [isResolving, setIsResolving] = useState(false);
 
   const messageTimer =
     useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -129,6 +142,16 @@ export default function Board() {
     }, 1200);
   }
 
+  async function playExplosion(indices: number[]) {
+    const ids = indices
+      .map((index) => board[index]?.id)
+      .filter((id): id is string => Boolean(id));
+
+    setExplodingIds(new Set(ids));
+    await wait(EXPLOSION_DURATION);
+    setExplodingIds(new Set());
+  }
+
   function restartGame() {
     if (messageTimer.current) {
       clearTimeout(messageTimer.current);
@@ -140,36 +163,54 @@ export default function Board() {
     setMoves(STARTING_MOVES);
     setActionText("");
     setPointsText("");
+    setExplodingIds(new Set());
+    setIsResolving(false);
   }
 
-  function activateCup(index: number) {
+  async function activateCup(index: number) {
+    if (isResolving) {
+      return;
+    }
+
+    setIsResolving(true);
+
     const row = Math.floor(index / BOARD_SIZE);
+
+    const rowIndices = Array.from(
+      { length: BOARD_SIZE },
+      (_, col) => row * BOARD_SIZE + col
+    );
+
+    await playExplosion(rowIndices);
+
     const newBoard = [...board];
 
-    for (let col = 0; col < BOARD_SIZE; col++) {
-      const rowIndex = row * BOARD_SIZE + col;
+    rowIndices.forEach((rowIndex) => {
       newBoard[rowIndex] = createEmptyTile();
-    }
+    });
 
     const droppedBoard = dropBalls(newBoard);
     const result = resolveBoard(droppedBoard);
-    const totalPoints = BOARD_SIZE * POINTS_PER_BALL + result.scoreGain;
+
+    const totalPoints =
+      BOARD_SIZE * POINTS_PER_BALL + result.scoreGain;
 
     setBoard(result.board);
     setScore((currentScore) => currentScore + totalPoints);
     setMoves((currentMoves) => currentMoves - 1);
     setSelected(null);
+    setIsResolving(false);
 
     showMessage("KUPA ATAĞI! 🏆", totalPoints);
   }
 
-  function handleClick(index: number) {
-    if (moves === 0) {
+  async function handleClick(index: number) {
+    if (moves === 0 || isResolving) {
       return;
     }
 
-    if (board[index].special === "cup") {
-      activateCup(index);
+    if (board[index]?.special === "cup") {
+      await activateCup(index);
       return;
     }
 
@@ -218,6 +259,20 @@ export default function Board() {
       return;
     }
 
+    setIsResolving(true);
+    setSelected(null);
+
+    const explodingTileIds = firstMatches
+      .map((matchedIndex) => swappedBoard[matchedIndex]?.id)
+      .filter((id): id is string => Boolean(id));
+
+    setBoard(swappedBoard);
+    setExplodingIds(new Set(explodingTileIds));
+
+    await wait(EXPLOSION_DURATION);
+
+    setExplodingIds(new Set());
+
     const result = resolveBoard(swappedBoard, index);
 
     setBoard(result.board);
@@ -225,15 +280,28 @@ export default function Board() {
       (currentScore) => currentScore + result.scoreGain
     );
     setMoves((currentMoves) => currentMoves - 1);
-    setSelected(null);
+    setIsResolving(false);
 
-    if (result.comboCount >= 2) {
+    if (result.comboCount >= 4) {
       showMessage(
-        `COMBO x${result.comboCount}! 🔥`,
+        `EFSANEVİ COMBO x${result.comboCount}! 🏆`,
+        result.scoreGain
+      );
+    } else if (result.comboCount >= 3) {
+      showMessage(
+        `MÜTHİŞ COMBO x${result.comboCount}! 🔥`,
+        result.scoreGain
+      );
+    } else if (result.comboCount === 2) {
+      showMessage(
+        "COMBO x2! ⚡",
         result.scoreGain
       );
     } else {
-      showMessage("GÜZEL HAMLE! ⚡", result.scoreGain);
+      showMessage(
+        "GÜZEL HAMLE! ⚡",
+        result.scoreGain
+      );
     }
   }
 
@@ -259,21 +327,10 @@ export default function Board() {
         <div className="relative rounded-[2rem] border border-white/10 bg-slate-900/80 p-3 shadow-2xl shadow-indigo-950/70 backdrop-blur-xl sm:p-5">
           <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-yellow-300 to-transparent" />
 
-          {(actionText || pointsText) && (
-            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
-              <div className="animate-bounce rounded-2xl border border-yellow-300/40 bg-slate-950/95 px-7 py-4 text-center shadow-2xl shadow-yellow-500/20">
-                <p className="text-2xl font-black text-yellow-400">
-                  {actionText}
-                </p>
-
-                {pointsText && (
-                  <p className="mt-1 text-xl font-black text-white">
-                    {pointsText}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
+          <ComboPopup
+            actionText={actionText}
+            pointsText={pointsText}
+          />
 
           <div className="grid grid-cols-8 gap-1.5 sm:gap-2">
             {board.map((tile, index) => (
@@ -281,7 +338,8 @@ export default function Board() {
                 key={tile.id}
                 tile={tile}
                 selected={selected === index}
-                disabled={moves === 0}
+                disabled={moves === 0 || isResolving}
+                exploding={explodingIds.has(tile.id)}
                 onClick={() => handleClick(index)}
               />
             ))}
@@ -290,6 +348,7 @@ export default function Board() {
 
         <div className="mt-4 flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300">
           <span>🏆</span>
+
           <span>
             Dörtlü eşleşme yap ve kupa saldırısını kullan.
           </span>
@@ -298,7 +357,9 @@ export default function Board() {
         {moves === 0 && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 backdrop-blur-md">
             <div className="w-full max-w-sm rounded-3xl border border-yellow-400/30 bg-gradient-to-b from-slate-800 to-slate-950 p-8 text-center text-white shadow-2xl">
-              <div className="text-6xl">🏆</div>
+              <div className="text-6xl">
+                🏆
+              </div>
 
               <p className="mt-4 text-sm font-bold tracking-[0.3em] text-yellow-400">
                 MAÇ SONU
