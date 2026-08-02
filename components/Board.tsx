@@ -12,6 +12,7 @@ import {
   findMatches,
 } from "../utils/match";
 import ComboPopup from "./ComboPopup";
+import GameOverModal from "./GameOverModal";
 import ScorePanel from "./ScorePanel";
 import Tile from "./Tile";
 
@@ -148,7 +149,9 @@ export default function Board() {
       .filter((id): id is string => Boolean(id));
 
     setExplodingIds(new Set(ids));
+
     await wait(EXPLOSION_DURATION);
+
     setExplodingIds(new Set());
   }
 
@@ -322,7 +325,10 @@ export default function Board() {
           </p>
         </div>
 
-        <ScorePanel score={score} moves={moves} />
+        <ScorePanel
+          score={score}
+          moves={moves}
+        />
 
         <div className="relative rounded-[2rem] border border-white/10 bg-slate-900/80 p-3 shadow-2xl shadow-indigo-950/70 backdrop-blur-xl sm:p-5">
           <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-yellow-300 to-transparent" />
@@ -355,37 +361,10 @@ export default function Board() {
         </div>
 
         {moves === 0 && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 backdrop-blur-md">
-            <div className="w-full max-w-sm rounded-3xl border border-yellow-400/30 bg-gradient-to-b from-slate-800 to-slate-950 p-8 text-center text-white shadow-2xl">
-              <div className="text-6xl">
-                🏆
-              </div>
-
-              <p className="mt-4 text-sm font-bold tracking-[0.3em] text-yellow-400">
-                MAÇ SONU
-              </p>
-
-              <h2 className="mt-2 text-3xl font-black">
-                Arena tamamlandı!
-              </h2>
-
-              <p className="mt-5 text-slate-300">
-                Toplam skorun
-              </p>
-
-              <p className="mt-1 text-5xl font-black text-yellow-400">
-                {score}
-              </p>
-
-              <button
-                type="button"
-                onClick={restartGame}
-                className="mt-7 w-full rounded-xl bg-yellow-400 px-5 py-3 font-black text-slate-950 shadow-lg transition hover:scale-105 hover:bg-yellow-300"
-              >
-                YENİDEN OYNA
-              </button>
-            </div>
-          </div>
+          <GameOverModal
+            score={score}
+            onRestart={restartGame}
+          />
         )}
       </div>
     </main>
