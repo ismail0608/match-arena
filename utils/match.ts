@@ -1,3 +1,5 @@
+import type { Tile } from "../types/tile";
+
 export type MatchDirection = "horizontal" | "vertical";
 
 export type MatchGroup = {
@@ -6,9 +8,9 @@ export type MatchGroup = {
 };
 
 const BOARD_SIZE = 8;
-const EMPTY_CELL = "⬛";
+const EMPTY_BALL = "⬛";
 
-export function findMatchGroups(board: string[]): MatchGroup[] {
+export function findMatchGroups(board: Tile[]): MatchGroup[] {
   const groups: MatchGroup[] = [];
 
   // Yatay eşleşmeler
@@ -17,21 +19,21 @@ export function findMatchGroups(board: string[]): MatchGroup[] {
 
     while (startCol < BOARD_SIZE) {
       const startIndex = row * BOARD_SIZE + startCol;
-      const ball = board[startIndex];
+      const ball = board[startIndex].ball;
 
       let endCol = startCol + 1;
 
       while (
         endCol < BOARD_SIZE &&
-        ball !== EMPTY_CELL &&
-        board[row * BOARD_SIZE + endCol] === ball
+        ball !== EMPTY_BALL &&
+        board[row * BOARD_SIZE + endCol].ball === ball
       ) {
         endCol++;
       }
 
       const length = endCol - startCol;
 
-      if (ball !== EMPTY_CELL && length >= 3) {
+      if (ball !== EMPTY_BALL && length >= 3) {
         const indices: number[] = [];
 
         for (let col = startCol; col < endCol; col++) {
@@ -54,21 +56,21 @@ export function findMatchGroups(board: string[]): MatchGroup[] {
 
     while (startRow < BOARD_SIZE) {
       const startIndex = startRow * BOARD_SIZE + col;
-      const ball = board[startIndex];
+      const ball = board[startIndex].ball;
 
       let endRow = startRow + 1;
 
       while (
         endRow < BOARD_SIZE &&
-        ball !== EMPTY_CELL &&
-        board[endRow * BOARD_SIZE + col] === ball
+        ball !== EMPTY_BALL &&
+        board[endRow * BOARD_SIZE + col].ball === ball
       ) {
         endRow++;
       }
 
       const length = endRow - startRow;
 
-      if (ball !== EMPTY_CELL && length >= 3) {
+      if (ball !== EMPTY_BALL && length >= 3) {
         const indices: number[] = [];
 
         for (let row = startRow; row < endRow; row++) {
@@ -88,7 +90,7 @@ export function findMatchGroups(board: string[]): MatchGroup[] {
   return groups;
 }
 
-export function findMatches(board: string[]) {
+export function findMatches(board: Tile[]): number[] {
   const groups = findMatchGroups(board);
   const matches = new Set<number>();
 

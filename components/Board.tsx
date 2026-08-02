@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createBoard, dropBalls } from "../utils/board";
+import type { Tile as TileType } from "../types/tile";
+import {
+  createBoard,
+  createEmptyTile,
+  dropBalls,
+} from "../utils/board";
 import {
   findMatchGroups,
   findMatches,
@@ -9,19 +14,18 @@ import {
 import ScorePanel from "./ScorePanel";
 import Tile from "./Tile";
 
+const BOARD_SIZE = 8;
 const STARTING_MOVES = 30;
 const POINTS_PER_BALL = 10;
-const EMPTY_CELL = "⬛";
-const CUP_TILE = "🏆";
 
 type ResolveResult = {
-  board: string[];
+  board: TileType[];
   scoreGain: number;
   comboCount: number;
 };
 
 function resolveBoard(
-  startingBoard: string[],
+  startingBoard: TileType[],
   preferredCupIndex?: number
 ): ResolveResult {
   let currentBoard = [...startingBoard];
@@ -47,18 +51,14 @@ function resolveBoard(
       });
 
       if (group.indices.length === 4) {
-        let cupIndex: number;
-
         const preferredIsInGroup =
           isFirstRound &&
           preferredCupIndex !== undefined &&
           group.indices.includes(preferredCupIndex);
 
-        if (preferredIsInGroup) {
-          cupIndex = preferredCupIndex;
-        } else {
-          cupIndex = group.indices[1];
-        }
+        const cupIndex = preferredIsInGroup
+          ? preferredCupIndex
+          : group.indices[1];
 
         cupIndices.add(cupIndex);
       }
@@ -67,14 +67,17 @@ function resolveBoard(
     let clearedCount = 0;
 
     matchedIndices.forEach((index) => {
-      if (!cupIndices.has(index)) {
-        currentBoard[index] = EMPTY_CELL;
-        clearedCount++;
-      }
-    });
+      if (cupIndices.has(index)) {
+        currentBoard[index] = {
+          ...currentBoard[index],
+          special: "cup",
+        };
 
-    cupIndices.forEach((index) => {
-      currentBoard[index] = CUP_TILE;
+        return;
+      }
+
+      currentBoard[index] = createEmptyTile();
+      clearedCount++;
     });
 
     scoreGain +=
@@ -92,7 +95,7 @@ function resolveBoard(
 }
 
 export default function Board() {
-  const [board, setBoard] = useState<string[]>([]);
+  const [board, setBoard] = useState<TileType[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [score, setScore] = useState(0);
   const [moves, setMoves] = useState(STARTING_MOVES);
@@ -140,16 +143,17 @@ export default function Board() {
   }
 
   function activateCup(index: number) {
-    const row = Math.floor(index / 8);
+    const row = Math.floor(index / BOARD_SIZE);
     const newBoard = [...board];
 
-    for (let col = 0; col < 8; col++) {
-      newBoard[row * 8 + col] = EMPTY_CELL;
+    for (let col = 0; col < BOARD_SIZE; col++) {
+      const rowIndex = row * BOARD_SIZE + col;
+      newBoard[rowIndex] = createEmptyTile();
     }
 
     const droppedBoard = dropBalls(newBoard);
     const result = resolveBoard(droppedBoard);
-    const totalPoints = 80 + result.scoreGain;
+    const totalPoints = BOARD_SIZE * POINTS_PER_BALL + result.scoreGain;
 
     setBoard(result.board);
     setScore((currentScore) => currentScore + totalPoints);
@@ -164,7 +168,7 @@ export default function Board() {
       return;
     }
 
-    if (board[index] === CUP_TILE) {
+    if (board[index].special === "cup") {
       activateCup(index);
       return;
     }
@@ -181,11 +185,11 @@ export default function Board() {
       return;
     }
 
-    const row1 = Math.floor(first / 8);
-    const col1 = first % 8;
+    const row1 = Math.floor(first / BOARD_SIZE);
+    const col1 = first % BOARD_SIZE;
 
-    const row2 = Math.floor(index / 8);
-    const col2 = index % 8;
+    const row2 = Math.floor(index / BOARD_SIZE);
+    const col2 = index % BOARD_SIZE;
 
     const isNeighbor =
       Math.abs(row1 - row2) + Math.abs(col1 - col2) === 1;
@@ -272,10 +276,10 @@ export default function Board() {
           )}
 
           <div className="grid grid-cols-8 gap-1.5 sm:gap-2">
-            {board.map((ball, index) => (
+            {board.map((tile, index) => (
               <Tile
-                key={index}
-                ball={ball}
+                key={tile.id}
+                tile={tile}
                 selected={selected === index}
                 disabled={moves === 0}
                 onClick={() => handleClick(index)}

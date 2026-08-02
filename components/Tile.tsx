@@ -1,21 +1,22 @@
 "use client";
 
 import { motion } from "motion/react";
+import type { Tile as TileType } from "../types/tile";
 
 type TileProps = {
-  ball: string;
+  tile: TileType;
   selected: boolean;
   disabled: boolean;
   onClick: () => void;
 };
 
 export default function Tile({
-  ball,
+  tile,
   selected,
   disabled,
   onClick,
 }: TileProps) {
-  const isCup = ball === "🏆";
+  const isCup = tile.special === "cup" || tile.ball === "🏆";
 
   return (
     <motion.button
@@ -23,6 +24,7 @@ export default function Tile({
       disabled={disabled}
       onClick={onClick}
       layout
+      layoutId={tile.id}
       initial={{
         opacity: 0,
         y: -35,
@@ -112,7 +114,7 @@ export default function Tile({
           repeat: Infinity,
         }}
       >
-        {ball}
+        {isCup ? "🏆" : tile.ball}
       </motion.span>
     </motion.button>
   );
