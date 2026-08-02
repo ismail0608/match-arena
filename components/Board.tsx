@@ -5,17 +5,23 @@ import {
   useRef,
   useState,
 } from "react";
+
+import type { GameReward } from "../types/progress";
 import type { Tile as TileType } from "../types/tile";
+
 import {
   createBoard,
   createEmptyTile,
   dropBalls,
 } from "../utils/board";
+
 import {
   findMatchGroups,
   findMatches,
 } from "../utils/match";
+
 import { playGameSound } from "../utils/sound";
+
 import ComboPopup from "./ComboPopup";
 import GameOverModal from "./GameOverModal";
 import PauseModal from "./PauseModal";
@@ -32,7 +38,7 @@ type BoardProps = {
   vibrationEnabled: boolean;
   animationsEnabled: boolean;
   onExit: () => void;
-  onGameEnd: (score: number) => void;
+  onGameEnd: (score: number) => GameReward;
 };
 
 type ResolveResult = {
@@ -121,7 +127,9 @@ function resolveBoard(
     });
 
     scoreGain +=
-      clearedCount * POINTS_PER_BALL * combo;
+      clearedCount *
+      POINTS_PER_BALL *
+      combo;
 
     currentBoard = dropBalls(currentBoard);
     isFirstRound = false;
@@ -141,24 +149,43 @@ export default function Board({
   onExit,
   onGameEnd,
 }: BoardProps) {
-  const [board, setBoard] = useState<TileType[]>([]);
+  const [board, setBoard] =
+    useState<TileType[]>([]);
+
   const [selected, setSelected] =
     useState<number | null>(null);
-  const [score, setScore] = useState(0);
+
+  const [score, setScore] =
+    useState(0);
+
   const [moves, setMoves] =
     useState(STARTING_MOVES);
-  const [actionText, setActionText] = useState("");
-  const [pointsText, setPointsText] = useState("");
+
+  const [actionText, setActionText] =
+    useState("");
+
+  const [pointsText, setPointsText] =
+    useState("");
+
   const [explodingIds, setExplodingIds] =
     useState<Set<string>>(new Set());
+
   const [isResolving, setIsResolving] =
     useState(false);
-  const [isPaused, setIsPaused] = useState(false);
+
+  const [isPaused, setIsPaused] =
+    useState(false);
+
+  const [gameReward, setGameReward] =
+    useState<GameReward | null>(null);
 
   const messageTimer =
-    useRef<ReturnType<typeof setTimeout> | null>(null);
+    useRef<ReturnType<typeof setTimeout> | null>(
+      null
+    );
 
-  const gameReportedRef = useRef(false);
+  const gameReportedRef =
+    useRef(false);
 
   useEffect(() => {
     setBoard(createBoard());
@@ -176,7 +203,10 @@ export default function Board({
       !gameReportedRef.current
     ) {
       gameReportedRef.current = true;
-      onGameEnd(score);
+
+      const reward = onGameEnd(score);
+
+      setGameReward(reward);
     }
   }, [moves, score, onGameEnd]);
 
@@ -189,7 +219,10 @@ export default function Board({
     }
 
     setActionText(message);
-    setPointsText(points > 0 ? `+${points}` : "");
+
+    setPointsText(
+      points > 0 ? `+${points}` : ""
+    );
 
     messageTimer.current = setTimeout(() => {
       setActionText("");
@@ -231,16 +264,23 @@ export default function Board({
     setExplodingIds(new Set());
     setIsResolving(false);
     setIsPaused(false);
+    setGameReward(null);
   }
 
-  async function activateCup(index: number) {
+  async function activateCup(
+    index: number
+  ) {
     if (isResolving || isPaused) {
       return;
     }
 
     setIsResolving(true);
 
-    playGameSound("cup", soundEnabled);
+    playGameSound(
+      "cup",
+      soundEnabled
+    );
+
     vibrate(
       [80, 40, 120],
       vibrationEnabled
@@ -272,8 +312,7 @@ export default function Board({
       resolveBoard(droppedBoard);
 
     const totalPoints =
-      BOARD_SIZE *
-        POINTS_PER_BALL +
+      BOARD_SIZE * POINTS_PER_BALL +
       result.scoreGain;
 
     setBoard(result.board);
@@ -418,9 +457,7 @@ export default function Board({
       firstMatches
         .map(
           (matchedIndex) =>
-            swappedBoard[
-              matchedIndex
-            ]?.id
+            swappedBoard[matchedIndex]?.id
         )
         .filter(
           (id): id is string =>
@@ -511,7 +548,7 @@ export default function Board({
   return (
     <main className="min-h-screen w-full bg-gradient-to-b from-slate-950 via-indigo-950 to-slate-950 px-4 py-8">
       <div className="mx-auto flex w-full max-w-3xl flex-col items-center">
-        <div className="mb-5 flex w-full max-w-xl items-start justify-between">
+        <div className="mb-5 flex w-full max-w-xl items-start justify-between gap-4">
           <div>
             <p className="text-sm font-bold tracking-[0.35em] text-yellow-400">
               SPORTS MATCH-3
@@ -522,7 +559,8 @@ export default function Board({
             </h1>
 
             <p className="mt-2 text-sm text-slate-300">
-              Topları eşleştir, kupaları kazan ve arenaya hükmet.
+              Topları eşleştir, kupaları kazan ve
+              arenaya hükmet.
             </p>
           </div>
 
@@ -536,7 +574,7 @@ export default function Board({
               setSelected(null);
               setIsPaused(true);
             }}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-xl text-white shadow-lg transition hover:scale-105 disabled:opacity-40"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-xl text-white shadow-lg transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40"
           >
             ⏸️
           </button>
@@ -590,7 +628,8 @@ export default function Board({
           <span>🏆</span>
 
           <span>
-            Dörtlü eşleşme yap ve kupa saldırısını kullan.
+            Dörtlü eşleşme yap ve kupa
+            saldırısını kullan.
           </span>
         </div>
 
@@ -606,11 +645,11 @@ export default function Board({
 
         {moves === 0 && (
           <GameOverModal
-  score={score}
-  earnedCoins={Math.floor(score / 10)}
-  onRestart={restartGame}
-  onExit={onExit}
-/>
+            score={score}
+            reward={gameReward}
+            onRestart={restartGame}
+            onExit={onExit}
+          />
         )}
       </div>
     </main>

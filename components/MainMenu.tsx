@@ -7,6 +7,7 @@ import CareerCard from "./CareerCard";
 type MainMenuProps = {
   career: CareerProgress;
   onPlay: () => void;
+  onMissions: () => void;
   onTournament: () => void;
   onSettings: () => void;
 };
@@ -14,6 +15,7 @@ type MainMenuProps = {
 export default function MainMenu({
   career,
   onPlay,
+  onMissions,
   onTournament,
   onSettings,
 }: MainMenuProps) {
@@ -221,6 +223,21 @@ export default function MainMenu({
 
           <motion.button
             type="button"
+            onClick={onMissions}
+            className="w-full rounded-2xl border border-purple-400/20 bg-purple-400/10 px-6 py-3 font-bold text-purple-200 backdrop-blur-md"
+            whileHover={{
+              scale: 1.02,
+              backgroundColor: "rgba(192,132,252,0.16)",
+            }}
+            whileTap={{
+              scale: 0.96,
+            }}
+          >
+            🎯 GÖREVLER
+          </motion.button>
+
+          <motion.button
+            type="button"
             onClick={onTournament}
             className="w-full rounded-2xl border border-white/10 bg-white/10 px-6 py-3 font-bold text-white backdrop-blur-md"
             whileHover={{
@@ -269,7 +286,7 @@ export default function MainMenu({
         </motion.div>
 
         <p className="mt-6 text-xs text-slate-500">
-          Match Arena • Prototype v0.5
+          Match Arena • Prototype v0.7
         </p>
       </div>
     </main>

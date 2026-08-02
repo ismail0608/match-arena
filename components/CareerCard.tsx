@@ -1,7 +1,12 @@
 "use client";
 
 import { motion } from "motion/react";
-import type { CareerProgress } from "../types/progress";
+import {
+  XP_PER_LEVEL,
+  getXpInCurrentLevel,
+  getXpProgressPercent,
+  type CareerProgress,
+} from "../types/progress";
 
 type CareerCardProps = {
   career: CareerProgress;
@@ -12,6 +17,9 @@ export default function CareerCard({
   career,
   onTournament,
 }: CareerCardProps) {
+  const currentLevelXp = getXpInCurrentLevel(career.xp);
+  const xpProgress = getXpProgressPercent(career.xp);
+
   return (
     <motion.button
       type="button"
@@ -44,7 +52,7 @@ export default function CareerCard({
       <div className="relative z-10 flex items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <motion.div
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 to-red-600 text-2xl shadow-lg"
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400 to-purple-700 text-2xl font-black text-white shadow-lg"
             animate={{
               y: [0, -4, 0],
             }}
@@ -53,16 +61,16 @@ export default function CareerCard({
               repeat: Infinity,
             }}
           >
-            🏀
+            {career.level}
           </motion.div>
 
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-wider text-yellow-300">
-              Basketbol Ligi
+            <p className="text-xs font-bold uppercase tracking-wider text-purple-300">
+              Oyuncu seviyesi
             </p>
 
-            <p className="mt-1 font-black text-white">
-              Kariyer ilerlemesi
+            <p className="mt-1 text-lg font-black text-white">
+              Level {career.level}
             </p>
           </div>
         </div>
@@ -75,6 +83,34 @@ export default function CareerCard({
           <p className="text-xl font-black text-white">
             {career.bestScore}
           </p>
+        </div>
+      </div>
+
+      <div className="relative z-10 mt-4">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-bold text-slate-300">
+            ⭐ Seviye ilerlemesi
+          </span>
+
+          <span className="font-black text-purple-300">
+            {currentLevelXp} / {XP_PER_LEVEL} XP
+          </span>
+        </div>
+
+        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-950/70">
+          <motion.div
+            className="h-full rounded-full bg-gradient-to-r from-indigo-400 via-purple-400 to-fuchsia-500"
+            initial={{
+              width: 0,
+            }}
+            animate={{
+              width: `${xpProgress}%`,
+            }}
+            transition={{
+              delay: 0.8,
+              duration: 0.7,
+            }}
+          />
         </div>
       </div>
 
@@ -95,26 +131,8 @@ export default function CareerCard({
           </p>
 
           <p className="mt-1 text-xl font-black text-yellow-400">
-            🪙 {career.coins ?? 0}
+            🪙 {career.coins}
           </p>
-        </div>
-      </div>
-
-      <div className="relative z-10 mt-4">
-        <div className="h-2.5 overflow-hidden rounded-full bg-slate-950/70">
-          <motion.div
-            className="h-full rounded-full bg-gradient-to-r from-orange-400 via-yellow-400 to-amber-500"
-            initial={{
-              width: 0,
-            }}
-            animate={{
-              width: `${career.basketballProgress}%`,
-            }}
-            transition={{
-              delay: 0.8,
-              duration: 0.7,
-            }}
-          />
         </div>
       </div>
 
