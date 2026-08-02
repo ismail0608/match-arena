@@ -1,67 +1,102 @@
-export function findMatches(board: string[]) {
-  const matches = new Set<number>();
+export type MatchDirection = "horizontal" | "vertical";
+
+export type MatchGroup = {
+  indices: number[];
+  direction: MatchDirection;
+};
+
+const BOARD_SIZE = 8;
+const EMPTY_CELL = "⬛";
+
+export function findMatchGroups(board: string[]): MatchGroup[] {
+  const groups: MatchGroup[] = [];
 
   // Yatay eşleşmeler
-  for (let row = 0; row < 8; row++) {
-    let count = 1;
+  for (let row = 0; row < BOARD_SIZE; row++) {
+    let startCol = 0;
 
-    for (let col = 1; col < 8; col++) {
-      const current = row * 8 + col;
-      const previous = row * 8 + col - 1;
+    while (startCol < BOARD_SIZE) {
+      const startIndex = row * BOARD_SIZE + startCol;
+      const ball = board[startIndex];
 
-      if (
-        board[current] === board[previous] &&
-        board[current] !== "⬛"
+      let endCol = startCol + 1;
+
+      while (
+        endCol < BOARD_SIZE &&
+        ball !== EMPTY_CELL &&
+        board[row * BOARD_SIZE + endCol] === ball
       ) {
-        count++;
-      } else {
-        if (count >= 3) {
-          for (let i = 0; i < count; i++) {
-            matches.add(previous - i);
-          }
-        }
-        count = 1;
+        endCol++;
       }
-    }
 
-    if (count >= 3) {
-      const last = row * 8 + 7;
-      for (let i = 0; i < count; i++) {
-        matches.add(last - i);
+      const length = endCol - startCol;
+
+      if (ball !== EMPTY_CELL && length >= 3) {
+        const indices: number[] = [];
+
+        for (let col = startCol; col < endCol; col++) {
+          indices.push(row * BOARD_SIZE + col);
+        }
+
+        groups.push({
+          indices,
+          direction: "horizontal",
+        });
       }
+
+      startCol = endCol;
     }
   }
 
   // Dikey eşleşmeler
-  for (let col = 0; col < 8; col++) {
-    let count = 1;
+  for (let col = 0; col < BOARD_SIZE; col++) {
+    let startRow = 0;
 
-    for (let row = 1; row < 8; row++) {
-      const current = row * 8 + col;
-      const previous = (row - 1) * 8 + col;
+    while (startRow < BOARD_SIZE) {
+      const startIndex = startRow * BOARD_SIZE + col;
+      const ball = board[startIndex];
 
-      if (
-        board[current] === board[previous] &&
-        board[current] !== "⬛"
+      let endRow = startRow + 1;
+
+      while (
+        endRow < BOARD_SIZE &&
+        ball !== EMPTY_CELL &&
+        board[endRow * BOARD_SIZE + col] === ball
       ) {
-        count++;
-      } else {
-        if (count >= 3) {
-          for (let i = 0; i < count; i++) {
-            matches.add(previous - i * 8);
-          }
-        }
-        count = 1;
+        endRow++;
       }
-    }
 
-    if (count >= 3) {
-      const last = 7 * 8 + col;
-      for (let i = 0; i < count; i++) {
-        matches.add(last - i * 8);
+      const length = endRow - startRow;
+
+      if (ball !== EMPTY_CELL && length >= 3) {
+        const indices: number[] = [];
+
+        for (let row = startRow; row < endRow; row++) {
+          indices.push(row * BOARD_SIZE + col);
+        }
+
+        groups.push({
+          indices,
+          direction: "vertical",
+        });
       }
+
+      startRow = endRow;
     }
   }
+
+  return groups;
+}
+
+export function findMatches(board: string[]) {
+  const groups = findMatchGroups(board);
+  const matches = new Set<number>();
+
+  groups.forEach((group) => {
+    group.indices.forEach((index) => {
+      matches.add(index);
+    });
+  });
 
   return [...matches];
 }
