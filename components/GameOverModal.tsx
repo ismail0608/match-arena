@@ -5,11 +5,13 @@ import { motion } from "motion/react";
 type GameOverModalProps = {
   score: number;
   onRestart: () => void;
+  onExit: () => void;
 };
 
 export default function GameOverModal({
   score,
   onRestart,
+  onExit,
 }: GameOverModalProps) {
   return (
     <motion.div
@@ -77,19 +79,27 @@ export default function GameOverModal({
           {score}
         </motion.p>
 
-        <motion.button
-          type="button"
-          onClick={onRestart}
-          className="mt-7 w-full rounded-xl bg-yellow-400 px-5 py-3 font-black text-slate-950 shadow-lg hover:bg-yellow-300"
-          whileHover={{
-            scale: 1.05,
-          }}
-          whileTap={{
-            scale: 0.92,
-          }}
-        >
-          YENİDEN OYNA
-        </motion.button>
+        <div className="mt-7 flex flex-col gap-3">
+          <motion.button
+            type="button"
+            onClick={onRestart}
+            className="w-full rounded-xl bg-yellow-400 px-5 py-3 font-black text-slate-950 shadow-lg hover:bg-yellow-300"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.92 }}
+          >
+            🔄 YENİDEN OYNA
+          </motion.button>
+
+          <motion.button
+            type="button"
+            onClick={onExit}
+            className="w-full rounded-xl border border-white/10 bg-white/10 px-5 py-3 font-bold text-white"
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.94 }}
+          >
+            🏠 ANA MENÜ
+          </motion.button>
+        </div>
       </motion.div>
     </motion.div>
   );

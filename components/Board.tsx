@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Tile as TileType } from "../types/tile";
 import {
   createBoard,
@@ -11,8 +15,10 @@ import {
   findMatchGroups,
   findMatches,
 } from "../utils/match";
+import { playGameSound } from "../utils/sound";
 import ComboPopup from "./ComboPopup";
 import GameOverModal from "./GameOverModal";
+import PauseModal from "./PauseModal";
 import ScorePanel from "./ScorePanel";
 import Tile from "./Tile";
 
@@ -20,6 +26,14 @@ const BOARD_SIZE = 8;
 const STARTING_MOVES = 30;
 const POINTS_PER_BALL = 10;
 const EXPLOSION_DURATION = 320;
+
+type BoardProps = {
+  soundEnabled: boolean;
+  vibrationEnabled: boolean;
+  animationsEnabled: boolean;
+  onExit: () => void;
+  onGameEnd: (score: number) => void;
+};
 
 type ResolveResult = {
   board: TileType[];
@@ -31,6 +45,22 @@ function wait(milliseconds: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, milliseconds);
   });
+}
+
+function vibrate(
+  pattern: number | number[],
+  enabled: boolean
+) {
+  if (!enabled) {
+    return;
+  }
+
+  if (
+    typeof navigator !== "undefined" &&
+    "vibrate" in navigator
+  ) {
+    navigator.vibrate(pattern);
+  }
 }
 
 function resolveBoard(
@@ -104,20 +134,31 @@ function resolveBoard(
   };
 }
 
-export default function Board() {
+export default function Board({
+  soundEnabled,
+  vibrationEnabled,
+  animationsEnabled,
+  onExit,
+  onGameEnd,
+}: BoardProps) {
   const [board, setBoard] = useState<TileType[]>([]);
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] =
+    useState<number | null>(null);
   const [score, setScore] = useState(0);
-  const [moves, setMoves] = useState(STARTING_MOVES);
+  const [moves, setMoves] =
+    useState(STARTING_MOVES);
   const [actionText, setActionText] = useState("");
   const [pointsText, setPointsText] = useState("");
-  const [explodingIds, setExplodingIds] = useState<Set<string>>(
-    new Set()
-  );
-  const [isResolving, setIsResolving] = useState(false);
+  const [explodingIds, setExplodingIds] =
+    useState<Set<string>>(new Set());
+  const [isResolving, setIsResolving] =
+    useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   const messageTimer =
     useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const gameReportedRef = useRef(false);
 
   useEffect(() => {
     setBoard(createBoard());
@@ -129,7 +170,20 @@ export default function Board() {
     };
   }, []);
 
-  function showMessage(message: string, points: number) {
+  useEffect(() => {
+    if (
+      moves === 0 &&
+      !gameReportedRef.current
+    ) {
+      gameReportedRef.current = true;
+      onGameEnd(score);
+    }
+  }, [moves, score, onGameEnd]);
+
+  function showMessage(
+    message: string,
+    points: number
+  ) {
     if (messageTimer.current) {
       clearTimeout(messageTimer.current);
     }
@@ -143,14 +197,20 @@ export default function Board() {
     }, 1200);
   }
 
-  async function playExplosion(indices: number[]) {
+  async function playExplosion(
+    indices: number[]
+  ) {
     const ids = indices
       .map((index) => board[index]?.id)
-      .filter((id): id is string => Boolean(id));
+      .filter(
+        (id): id is string => Boolean(id)
+      );
 
     setExplodingIds(new Set(ids));
 
-    await wait(EXPLOSION_DURATION);
+    if (animationsEnabled) {
+      await wait(EXPLOSION_DURATION);
+    }
 
     setExplodingIds(new Set());
   }
@@ -160,6 +220,8 @@ export default function Board() {
       clearTimeout(messageTimer.current);
     }
 
+    gameReportedRef.current = false;
+
     setBoard(createBoard());
     setSelected(null);
     setScore(0);
@@ -168,20 +230,30 @@ export default function Board() {
     setPointsText("");
     setExplodingIds(new Set());
     setIsResolving(false);
+    setIsPaused(false);
   }
 
   async function activateCup(index: number) {
-    if (isResolving) {
+    if (isResolving || isPaused) {
       return;
     }
 
     setIsResolving(true);
 
-    const row = Math.floor(index / BOARD_SIZE);
+    playGameSound("cup", soundEnabled);
+    vibrate(
+      [80, 40, 120],
+      vibrationEnabled
+    );
+
+    const row = Math.floor(
+      index / BOARD_SIZE
+    );
 
     const rowIndices = Array.from(
       { length: BOARD_SIZE },
-      (_, col) => row * BOARD_SIZE + col
+      (_, col) =>
+        row * BOARD_SIZE + col
     );
 
     await playExplosion(rowIndices);
@@ -189,36 +261,73 @@ export default function Board() {
     const newBoard = [...board];
 
     rowIndices.forEach((rowIndex) => {
-      newBoard[rowIndex] = createEmptyTile();
+      newBoard[rowIndex] =
+        createEmptyTile();
     });
 
-    const droppedBoard = dropBalls(newBoard);
-    const result = resolveBoard(droppedBoard);
+    const droppedBoard =
+      dropBalls(newBoard);
+
+    const result =
+      resolveBoard(droppedBoard);
 
     const totalPoints =
-      BOARD_SIZE * POINTS_PER_BALL + result.scoreGain;
+      BOARD_SIZE *
+        POINTS_PER_BALL +
+      result.scoreGain;
 
     setBoard(result.board);
-    setScore((currentScore) => currentScore + totalPoints);
-    setMoves((currentMoves) => currentMoves - 1);
+
+    setScore(
+      (currentScore) =>
+        currentScore + totalPoints
+    );
+
+    setMoves(
+      (currentMoves) =>
+        currentMoves - 1
+    );
+
     setSelected(null);
     setIsResolving(false);
 
-    showMessage("KUPA ATAĞI! 🏆", totalPoints);
+    showMessage(
+      "KUPA ATAĞI! 🏆",
+      totalPoints
+    );
   }
 
-  async function handleClick(index: number) {
-    if (moves === 0 || isResolving) {
+  async function handleClick(
+    index: number
+  ) {
+    if (
+      moves === 0 ||
+      isResolving ||
+      isPaused
+    ) {
       return;
     }
 
-    if (board[index]?.special === "cup") {
+    if (
+      board[index]?.special === "cup"
+    ) {
       await activateCup(index);
       return;
     }
 
     if (selected === null) {
       setSelected(index);
+
+      playGameSound(
+        "select",
+        soundEnabled
+      );
+
+      vibrate(
+        15,
+        vibrationEnabled
+      );
+
       return;
     }
 
@@ -229,28 +338,53 @@ export default function Board() {
       return;
     }
 
-    const row1 = Math.floor(first / BOARD_SIZE);
-    const col1 = first % BOARD_SIZE;
+    const row1 = Math.floor(
+      first / BOARD_SIZE
+    );
 
-    const row2 = Math.floor(index / BOARD_SIZE);
-    const col2 = index % BOARD_SIZE;
+    const col1 =
+      first % BOARD_SIZE;
+
+    const row2 = Math.floor(
+      index / BOARD_SIZE
+    );
+
+    const col2 =
+      index % BOARD_SIZE;
 
     const isNeighbor =
-      Math.abs(row1 - row2) + Math.abs(col1 - col2) === 1;
+      Math.abs(row1 - row2) +
+        Math.abs(col1 - col2) ===
+      1;
 
     if (!isNeighbor) {
       setSelected(index);
+
+      playGameSound(
+        "select",
+        soundEnabled
+      );
+
+      vibrate(
+        15,
+        vibrationEnabled
+      );
+
       return;
     }
 
     const swappedBoard = [...board];
 
-    [swappedBoard[first], swappedBoard[index]] = [
+    [
+      swappedBoard[first],
+      swappedBoard[index],
+    ] = [
       swappedBoard[index],
       swappedBoard[first],
     ];
 
-    const firstMatches = findMatches(swappedBoard);
+    const firstMatches =
+      findMatches(swappedBoard);
 
     const createsMatch =
       firstMatches.includes(first) ||
@@ -258,44 +392,110 @@ export default function Board() {
 
     if (!createsMatch) {
       setSelected(null);
-      showMessage("GEÇERSİZ HAMLE", 0);
+
+      playGameSound(
+        "invalid",
+        soundEnabled
+      );
+
+      vibrate(
+        [40, 30, 40],
+        vibrationEnabled
+      );
+
+      showMessage(
+        "GEÇERSİZ HAMLE",
+        0
+      );
+
       return;
     }
 
     setIsResolving(true);
     setSelected(null);
 
-    const explodingTileIds = firstMatches
-      .map((matchedIndex) => swappedBoard[matchedIndex]?.id)
-      .filter((id): id is string => Boolean(id));
+    const explodingTileIds =
+      firstMatches
+        .map(
+          (matchedIndex) =>
+            swappedBoard[
+              matchedIndex
+            ]?.id
+        )
+        .filter(
+          (id): id is string =>
+            Boolean(id)
+        );
 
     setBoard(swappedBoard);
-    setExplodingIds(new Set(explodingTileIds));
 
-    await wait(EXPLOSION_DURATION);
+    setExplodingIds(
+      new Set(explodingTileIds)
+    );
+
+    vibrate(
+      35,
+      vibrationEnabled
+    );
+
+    if (animationsEnabled) {
+      await wait(EXPLOSION_DURATION);
+    }
 
     setExplodingIds(new Set());
 
-    const result = resolveBoard(swappedBoard, index);
+    const result = resolveBoard(
+      swappedBoard,
+      index
+    );
 
     setBoard(result.board);
+
     setScore(
-      (currentScore) => currentScore + result.scoreGain
+      (currentScore) =>
+        currentScore +
+        result.scoreGain
     );
-    setMoves((currentMoves) => currentMoves - 1);
+
+    setMoves(
+      (currentMoves) =>
+        currentMoves - 1
+    );
+
     setIsResolving(false);
+
+    if (result.comboCount >= 2) {
+      playGameSound(
+        "combo",
+        soundEnabled
+      );
+
+      vibrate(
+        [40, 30, 70],
+        vibrationEnabled
+      );
+    } else {
+      playGameSound(
+        "match",
+        soundEnabled
+      );
+    }
 
     if (result.comboCount >= 4) {
       showMessage(
         `EFSANEVİ COMBO x${result.comboCount}! 🏆`,
         result.scoreGain
       );
-    } else if (result.comboCount >= 3) {
+    } else if (
+      result.comboCount >= 3
+    ) {
       showMessage(
         `MÜTHİŞ COMBO x${result.comboCount}! 🔥`,
         result.scoreGain
       );
-    } else if (result.comboCount === 2) {
+    } else if (
+      result.comboCount === 2
+    ) {
       showMessage(
         "COMBO x2! ⚡",
         result.scoreGain
@@ -311,18 +511,35 @@ export default function Board() {
   return (
     <main className="min-h-screen w-full bg-gradient-to-b from-slate-950 via-indigo-950 to-slate-950 px-4 py-8">
       <div className="mx-auto flex w-full max-w-3xl flex-col items-center">
-        <div className="mb-5 text-center">
-          <p className="text-sm font-bold tracking-[0.35em] text-yellow-400">
-            SPORTS MATCH-3
-          </p>
+        <div className="mb-5 flex w-full max-w-xl items-start justify-between">
+          <div>
+            <p className="text-sm font-bold tracking-[0.35em] text-yellow-400">
+              SPORTS MATCH-3
+            </p>
 
-          <h1 className="mt-1 text-4xl font-black tracking-tight text-white">
-            MATCH ARENA
-          </h1>
+            <h1 className="mt-1 text-4xl font-black tracking-tight text-white">
+              MATCH ARENA
+            </h1>
 
-          <p className="mt-2 text-sm text-slate-300">
-            Topları eşleştir, kupaları kazan ve arenaya hükmet.
-          </p>
+            <p className="mt-2 text-sm text-slate-300">
+              Topları eşleştir, kupaları kazan ve arenaya hükmet.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            disabled={
+              isResolving ||
+              moves === 0
+            }
+            onClick={() => {
+              setSelected(null);
+              setIsPaused(true);
+            }}
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-xl text-white shadow-lg transition hover:scale-105 disabled:opacity-40"
+          >
+            ⏸️
+          </button>
         </div>
 
         <ScorePanel
@@ -339,16 +556,33 @@ export default function Board() {
           />
 
           <div className="grid grid-cols-8 gap-1.5 sm:gap-2">
-            {board.map((tile, index) => (
-              <Tile
-                key={tile.id}
-                tile={tile}
-                selected={selected === index}
-                disabled={moves === 0 || isResolving}
-                exploding={explodingIds.has(tile.id)}
-                onClick={() => handleClick(index)}
-              />
-            ))}
+            {board.map(
+              (tile, index) => (
+                <Tile
+                  key={tile.id}
+                  tile={tile}
+                  selected={
+                    selected === index
+                  }
+                  disabled={
+                    moves === 0 ||
+                    isResolving ||
+                    isPaused
+                  }
+                  exploding={
+                    explodingIds.has(
+                      tile.id
+                    )
+                  }
+                  animationsEnabled={
+                    animationsEnabled
+                  }
+                  onClick={() =>
+                    handleClick(index)
+                  }
+                />
+              )
+            )}
           </div>
         </div>
 
@@ -360,11 +594,23 @@ export default function Board() {
           </span>
         </div>
 
+        {isPaused && (
+          <PauseModal
+            onResume={() =>
+              setIsPaused(false)
+            }
+            onRestart={restartGame}
+            onExit={onExit}
+          />
+        )}
+
         {moves === 0 && (
           <GameOverModal
-            score={score}
-            onRestart={restartGame}
-          />
+  score={score}
+  earnedCoins={Math.floor(score / 10)}
+  onRestart={restartGame}
+  onExit={onExit}
+/>
         )}
       </div>
     </main>

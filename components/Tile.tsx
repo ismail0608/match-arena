@@ -8,6 +8,7 @@ type TileProps = {
   selected: boolean;
   disabled: boolean;
   exploding: boolean;
+  animationsEnabled: boolean;
   onClick: () => void;
 };
 
@@ -16,46 +17,63 @@ export default function Tile({
   selected,
   disabled,
   exploding,
+  animationsEnabled,
   onClick,
 }: TileProps) {
   const isCup = tile.special === "cup";
+
+  const normalAnimation = {
+    opacity: 1,
+    y: selected ? -5 : 0,
+    scale: selected ? 1.12 : 1,
+    rotate:
+      animationsEnabled && isCup
+        ? [0, -4, 4, -2, 2, 0]
+        : 0,
+    filter: "brightness(1)",
+  };
+
+  const explosionAnimation = animationsEnabled
+    ? {
+        opacity: [1, 1, 0],
+        scale: [1, 1.35, 0],
+        rotate: [0, -12, 12, 0],
+        filter: [
+          "brightness(1)",
+          "brightness(2.5)",
+          "brightness(1)",
+        ],
+      }
+    : {
+        opacity: 0,
+        scale: 0,
+      };
 
   return (
     <motion.button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      layout
-      layoutId={tile.id}
-      initial={{
-        opacity: 0,
-        y: -40,
-        scale: 0.7,
-      }}
+      layout={animationsEnabled}
+      layoutId={
+        animationsEnabled ? tile.id : undefined
+      }
+      initial={
+        animationsEnabled
+          ? {
+              opacity: 0,
+              y: -40,
+              scale: 0.7,
+            }
+          : false
+      }
       animate={
         exploding
-          ? {
-              opacity: [1, 1, 0],
-              scale: [1, 1.35, 0],
-              rotate: [0, -12, 12, 0],
-              filter: [
-                "brightness(1)",
-                "brightness(2.5)",
-                "brightness(1)",
-              ],
-            }
-          : {
-              opacity: 1,
-              y: selected ? -5 : 0,
-              scale: selected ? 1.12 : 1,
-              rotate: isCup
-                ? [0, -4, 4, -2, 2, 0]
-                : 0,
-              filter: "brightness(1)",
-            }
+          ? explosionAnimation
+          : normalAnimation
       }
       whileHover={
-        disabled || exploding
+        disabled || exploding || !animationsEnabled
           ? undefined
           : {
               y: -4,
@@ -63,7 +81,7 @@ export default function Tile({
             }
       }
       whileTap={
-        disabled || exploding
+        disabled || exploding || !animationsEnabled
           ? undefined
           : {
               scale: 0.88,
@@ -71,35 +89,39 @@ export default function Tile({
             }
       }
       transition={
-        exploding
-          ? {
-              duration: 0.3,
-              ease: "easeOut",
-            }
+        animationsEnabled
+          ? exploding
+            ? {
+                duration: 0.3,
+                ease: "easeOut",
+              }
+            : {
+                layout: {
+                  type: "spring",
+                  stiffness: 500,
+                  damping: 32,
+                },
+                opacity: {
+                  duration: 0.2,
+                },
+                y: {
+                  type: "spring",
+                  stiffness: 500,
+                  damping: 24,
+                },
+                scale: {
+                  type: "spring",
+                  stiffness: 500,
+                  damping: 22,
+                },
+                rotate: {
+                  duration: 1.4,
+                  repeat: isCup ? Infinity : 0,
+                  repeatDelay: 0.7,
+                },
+              }
           : {
-              layout: {
-                type: "spring",
-                stiffness: 500,
-                damping: 32,
-              },
-              opacity: {
-                duration: 0.2,
-              },
-              y: {
-                type: "spring",
-                stiffness: 500,
-                damping: 24,
-              },
-              scale: {
-                type: "spring",
-                stiffness: 500,
-                damping: 22,
-              },
-              rotate: {
-                duration: 1.4,
-                repeat: isCup ? Infinity : 0,
-                repeatDelay: 0.7,
-              },
+              duration: 0,
             }
       }
       className={`
@@ -122,7 +144,7 @@ export default function Tile({
         }
       `}
     >
-      {exploding && (
+      {exploding && animationsEnabled && (
         <motion.span
           className="pointer-events-none absolute inset-0 rounded-full bg-yellow-300"
           initial={{
@@ -142,7 +164,7 @@ export default function Tile({
       <motion.span
         className="relative z-10"
         animate={
-          isCup && !exploding
+          animationsEnabled && isCup && !exploding
             ? {
                 filter: [
                   "drop-shadow(0 0 2px rgba(250,204,21,0.4))",
@@ -150,11 +172,17 @@ export default function Tile({
                   "drop-shadow(0 0 2px rgba(250,204,21,0.4))",
                 ],
               }
-            : undefined
+            : {
+                filter:
+                  "drop-shadow(0 0 0 rgba(0,0,0,0))",
+              }
         }
         transition={{
-          duration: 1.2,
-          repeat: Infinity,
+          duration: animationsEnabled ? 1.2 : 0,
+          repeat:
+            animationsEnabled && isCup
+              ? Infinity
+              : 0,
         }}
       >
         {isCup ? "🏆" : tile.ball}
