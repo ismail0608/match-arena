@@ -11,15 +11,42 @@ import type { Tile as TileType } from "../types/tile";
 
 import {
   createBoard,
-  createEmptyTile,
   dropBalls,
 } from "../utils/board";
 
 import {
-  findMatchGroups,
-  findMatches,
-} from "../utils/match";
+  expandPowerUpChain,
+} from "../utils/chainReaction";
 
+import {
+  EXPLOSION_DURATION,
+  vibrate,
+  wait,
+} from "../utils/gameEffects";
+
+import {
+  getLevelById,
+  getLevelResult,
+} from "../utils/levels";
+
+import { findMatches } from "../utils/match";
+
+import {
+  getAreaBombClearIndices,
+  getAreaBombComboIndices,
+  getColorBombAreaBombResult,
+  getColorBombResult,
+  getColorBombRocketResult,
+  getRocketAreaBombComboIndices,
+  getRocketClearIndices,
+  getRocketComboIndices,
+  isAreaBomb,
+  isColorBomb,
+  isRocket,
+} from "../utils/powerUps";
+
+import { damageTiles } from "../utils/obstacles";
+import { resolveBoard } from "../utils/resolver";
 import { playGameSound } from "../utils/sound";
 
 import ComboPopup from "./ComboPopup";
@@ -27,128 +54,38 @@ import GameOverModal from "./GameOverModal";
 import PauseModal from "./PauseModal";
 import ScorePanel from "./ScorePanel";
 import Tile from "./Tile";
+import TutorialModal from "./TutorialModal";
 
 const BOARD_SIZE = 8;
-const STARTING_MOVES = 30;
 const POINTS_PER_BALL = 10;
-const EXPLOSION_DURATION = 320;
 
 type BoardProps = {
   soundEnabled: boolean;
   vibrationEnabled: boolean;
   animationsEnabled: boolean;
   onExit: () => void;
-  onGameEnd: (score: number) => GameReward;
+  levelId: number;
+  onGameEnd: (
+    score: number
+  ) => GameReward;
+  onLevelComplete: (
+    levelId: number,
+    score: number,
+    stars: number
+  ) => void;
 };
-
-type ResolveResult = {
-  board: TileType[];
-  scoreGain: number;
-  comboCount: number;
-};
-
-function wait(milliseconds: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
-}
-
-function vibrate(
-  pattern: number | number[],
-  enabled: boolean
-) {
-  if (!enabled) {
-    return;
-  }
-
-  if (
-    typeof navigator !== "undefined" &&
-    "vibrate" in navigator
-  ) {
-    navigator.vibrate(pattern);
-  }
-}
-
-function resolveBoard(
-  startingBoard: TileType[],
-  preferredCupIndex?: number
-): ResolveResult {
-  let currentBoard = [...startingBoard];
-  let scoreGain = 0;
-  let combo = 0;
-  let isFirstRound = true;
-
-  while (true) {
-    const groups = findMatchGroups(currentBoard);
-
-    if (groups.length === 0) {
-      break;
-    }
-
-    combo++;
-
-    const matchedIndices = new Set<number>();
-    const cupIndices = new Set<number>();
-
-    groups.forEach((group) => {
-      group.indices.forEach((index) => {
-        matchedIndices.add(index);
-      });
-
-      if (group.indices.length === 4) {
-        let cupIndex = group.indices[1];
-
-        if (
-          isFirstRound &&
-          preferredCupIndex !== undefined &&
-          group.indices.includes(preferredCupIndex)
-        ) {
-          cupIndex = preferredCupIndex;
-        }
-
-        cupIndices.add(cupIndex);
-      }
-    });
-
-    let clearedCount = 0;
-
-    matchedIndices.forEach((index) => {
-      if (cupIndices.has(index)) {
-        currentBoard[index] = {
-          ...currentBoard[index],
-          special: "cup",
-        };
-
-        return;
-      }
-
-      currentBoard[index] = createEmptyTile();
-      clearedCount++;
-    });
-
-    scoreGain +=
-      clearedCount *
-      POINTS_PER_BALL *
-      combo;
-
-    currentBoard = dropBalls(currentBoard);
-    isFirstRound = false;
-  }
-
-  return {
-    board: currentBoard,
-    scoreGain,
-    comboCount: combo,
-  };
-}
 
 export default function Board({
   soundEnabled,
   vibrationEnabled,
+  levelId,
   animationsEnabled,
   onExit,
   onGameEnd,
+  onLevelComplete,
 }: BoardProps) {
+  const currentLevel =
+    getLevelById(levelId);
   const [board, setBoard] =
     useState<TileType[]>([]);
 
@@ -159,7 +96,7 @@ export default function Board({
     useState(0);
 
   const [moves, setMoves] =
-    useState(STARTING_MOVES);
+    useState(currentLevel.moves);
 
   const [actionText, setActionText] =
     useState("");
@@ -167,114 +104,290 @@ export default function Board({
   const [pointsText, setPointsText] =
     useState("");
 
-  const [explodingIds, setExplodingIds] =
-    useState<Set<string>>(new Set());
+  const [
+    explodingIds,
+    setExplodingIds,
+  ] = useState<Set<string>>(
+    new Set()
+  );
 
-  const [isResolving, setIsResolving] =
-    useState(false);
+  const [
+    isResolving,
+    setIsResolving,
+  ] = useState(false);
 
   const [isPaused, setIsPaused] =
     useState(false);
 
-  const [gameReward, setGameReward] =
-    useState<GameReward | null>(null);
+  const [showTutorial, setShowTutorial] =
+    useState(true);
+
+  const [
+    gameReward,
+    setGameReward,
+  ] = useState<GameReward | null>(
+    null
+  );
 
   const messageTimer =
-    useRef<ReturnType<typeof setTimeout> | null>(
-      null
-    );
+    useRef<
+      ReturnType<
+        typeof setTimeout
+      > | null
+    >(null);
 
   const gameReportedRef =
     useRef(false);
 
   useEffect(() => {
-    setBoard(createBoard());
+    setBoard(createBoard(levelId, currentLevel.balls));
 
     return () => {
       if (messageTimer.current) {
-        clearTimeout(messageTimer.current);
+        clearTimeout(
+          messageTimer.current
+        );
       }
     };
   }, []);
 
   useEffect(() => {
-    if (
-      moves === 0 &&
-      !gameReportedRef.current
-    ) {
-      gameReportedRef.current = true;
+    gameReportedRef.current = false;
+    setBoard(createBoard(levelId, currentLevel.balls));
+    setSelected(null);
+    setScore(0);
+    setMoves(currentLevel.moves);
+    setActionText("");
+    setPointsText("");
+    setExplodingIds(new Set());
+    setIsResolving(false);
+    setIsPaused(false);
+    setShowTutorial(true);
+    setGameReward(null);
+  }, [levelId, currentLevel.moves]);
 
-      const reward = onGameEnd(score);
+  useEffect(() => {
+    if (
+      moves !== 0 ||
+      gameReportedRef.current
+    ) {
+      return;
+    }
+
+    gameReportedRef.current = true;
+
+    const levelResult =
+      getLevelResult(
+        score,
+        currentLevel
+      );
+
+    if (levelResult.won) {
+      onLevelComplete(
+        levelId,
+        score,
+        levelResult.stars
+      );
+
+      const reward =
+        onGameEnd(score);
 
       setGameReward(reward);
+    } else {
+      setGameReward(null);
     }
-  }, [moves, score, onGameEnd]);
+  }, [
+    moves,
+    score,
+    onGameEnd,
+    onLevelComplete,
+    levelId,
+    currentLevel,
+  ]);
 
   function showMessage(
     message: string,
     points: number
   ) {
     if (messageTimer.current) {
-      clearTimeout(messageTimer.current);
+      clearTimeout(
+        messageTimer.current
+      );
     }
 
     setActionText(message);
 
     setPointsText(
-      points > 0 ? `+${points}` : ""
+      points > 0
+        ? `+${points}`
+        : ""
     );
 
-    messageTimer.current = setTimeout(() => {
-      setActionText("");
-      setPointsText("");
-    }, 1200);
+    messageTimer.current =
+      setTimeout(() => {
+        setActionText("");
+        setPointsText("");
+      }, 1200);
   }
 
-  async function playExplosion(
+  async function animateExplosion(
+    sourceBoard: TileType[],
     indices: number[]
   ) {
-    const ids = indices
-      .map((index) => board[index]?.id)
+    const uniqueIndices = [
+      ...new Set(indices),
+    ];
+
+    const ids = uniqueIndices
+      .map(
+        (index) =>
+          sourceBoard[index]?.id
+      )
       .filter(
-        (id): id is string => Boolean(id)
+        (id): id is string =>
+          Boolean(id)
       );
 
-    setExplodingIds(new Set(ids));
+    setExplodingIds(
+      new Set(ids)
+    );
 
     if (animationsEnabled) {
-      await wait(EXPLOSION_DURATION);
+      await wait(
+        EXPLOSION_DURATION
+      );
     }
 
     setExplodingIds(new Set());
   }
 
+  function finishPowerUp(
+    resultBoard: TileType[],
+    points: number
+  ) {
+    setBoard(resultBoard);
+
+    setScore(
+      (currentScore) =>
+        currentScore + points
+    );
+
+    setMoves(
+      (currentMoves) =>
+        Math.max(
+          0,
+          currentMoves - 1
+        )
+    );
+
+    setSelected(null);
+    setIsResolving(false);
+  }
+
   function restartGame() {
     if (messageTimer.current) {
-      clearTimeout(messageTimer.current);
+      clearTimeout(
+        messageTimer.current
+      );
     }
 
-    gameReportedRef.current = false;
+    gameReportedRef.current =
+      false;
 
-    setBoard(createBoard());
+    setBoard(createBoard(levelId, currentLevel.balls));
     setSelected(null);
     setScore(0);
-    setMoves(STARTING_MOVES);
+    setMoves(
+      currentLevel.moves
+    );
     setActionText("");
     setPointsText("");
     setExplodingIds(new Set());
     setIsResolving(false);
     setIsPaused(false);
+    setShowTutorial(true);
     setGameReward(null);
   }
 
-  async function activateCup(
+  async function clearPowerUpArea(
+    sourceBoard: TileType[],
+    startingIndices: number[],
+    pointMultiplier = 1
+  ) {
+    const chainedIndices =
+      expandPowerUpChain(
+        sourceBoard,
+        startingIndices
+      );
+
+    await animateExplosion(
+      sourceBoard,
+      chainedIndices
+    );
+
+    const damageResult =
+      damageTiles(
+        sourceBoard,
+        chainedIndices
+      );
+
+    const result =
+      resolveBoard(
+        dropBalls(
+          damageResult.board,
+          currentLevel.balls
+        ),
+        undefined,
+        currentLevel.balls
+      );
+
+    const powerUpPoints =
+      (damageResult.clearedCount *
+        POINTS_PER_BALL +
+        damageResult.damagedObstacleCount *
+          5) *
+      pointMultiplier;
+
+    return {
+      board: result.board,
+      points:
+        powerUpPoints +
+        result.scoreGain,
+      clearedCount:
+        damageResult.clearedCount,
+      damagedObstacleCount:
+        damageResult.damagedObstacleCount,
+    };
+  }
+
+  async function activateRocket(
     index: number
   ) {
-    if (isResolving || isPaused) {
+    const rocketTile =
+      board[index];
+
+    if (
+      isResolving ||
+      isPaused ||
+      !isRocket(rocketTile)
+    ) {
+      return;
+    }
+
+    const indicesToClear =
+      getRocketClearIndices(
+        board,
+        index
+      );
+
+    if (
+      indicesToClear.length === 0
+    ) {
       return;
     }
 
     setIsResolving(true);
+    setSelected(null);
 
     playGameSound(
       "cup",
@@ -282,209 +395,466 @@ export default function Board({
     );
 
     vibrate(
-      [80, 40, 120],
+      [70, 30, 110],
       vibrationEnabled
     );
 
-    const row = Math.floor(
-      index / BOARD_SIZE
-    );
-
-    const rowIndices = Array.from(
-      { length: BOARD_SIZE },
-      (_, col) =>
-        row * BOARD_SIZE + col
-    );
-
-    await playExplosion(rowIndices);
-
-    const newBoard = [...board];
-
-    rowIndices.forEach((rowIndex) => {
-      newBoard[rowIndex] =
-        createEmptyTile();
-    });
-
-    const droppedBoard =
-      dropBalls(newBoard);
-
     const result =
-      resolveBoard(droppedBoard);
+      await clearPowerUpArea(
+        board,
+        indicesToClear
+      );
 
-    const totalPoints =
-      BOARD_SIZE * POINTS_PER_BALL +
-      result.scoreGain;
-
-    setBoard(result.board);
-
-    setScore(
-      (currentScore) =>
-        currentScore + totalPoints
+    finishPowerUp(
+      result.board,
+      result.points
     );
-
-    setMoves(
-      (currentMoves) =>
-        currentMoves - 1
-    );
-
-    setSelected(null);
-    setIsResolving(false);
 
     showMessage(
-      "KUPA ATAĞI! 🏆",
-      totalPoints
+      rocketTile.special ===
+        "rocket-horizontal"
+        ? "YATAY ROKET! 🚀"
+        : "DİKEY ROKET! 🚀",
+      result.points
     );
   }
 
-  async function handleClick(
+  async function activateRocketCombo(
+    firstIndex: number,
+    secondIndex: number,
+    swappedBoard: TileType[]
+  ) {
+    const indicesToClear =
+      getRocketComboIndices(
+        firstIndex,
+        secondIndex
+      );
+
+    setIsResolving(true);
+    setSelected(null);
+    setBoard(swappedBoard);
+
+    playGameSound(
+      "combo",
+      soundEnabled
+    );
+
+    vibrate(
+      [
+        80,
+        30,
+        100,
+        30,
+        150,
+      ],
+      vibrationEnabled
+    );
+
+    const result =
+      await clearPowerUpArea(
+        swappedBoard,
+        indicesToClear,
+        2
+      );
+
+    finishPowerUp(
+      result.board,
+      result.points
+    );
+
+    showMessage(
+      "ÇİFTE ROKET! 🚀🚀",
+      result.points
+    );
+  }
+
+  async function activateRocketAreaBombCombo(
+    centerIndex: number,
+    swappedBoard: TileType[]
+  ) {
+    const indicesToClear =
+      getRocketAreaBombComboIndices(
+        centerIndex
+      );
+
+    setIsResolving(true);
+    setSelected(null);
+    setBoard(swappedBoard);
+
+    playGameSound(
+      "combo",
+      soundEnabled
+    );
+
+    vibrate(
+      [
+        100,
+        30,
+        120,
+        30,
+        180,
+      ],
+      vibrationEnabled
+    );
+
+    const result =
+      await clearPowerUpArea(
+        swappedBoard,
+        indicesToClear,
+        3
+      );
+
+    finishPowerUp(
+      result.board,
+      result.points
+    );
+
+    showMessage(
+      "ROKET BOMBASI! 🚀💣",
+      result.points
+    );
+  }
+
+  async function activateAreaBomb(
     index: number
   ) {
+    const bombTile =
+      board[index];
+
     if (
-      moves === 0 ||
       isResolving ||
-      isPaused
+      isPaused ||
+      !isAreaBomb(bombTile)
     ) {
       return;
     }
 
-    if (
-      board[index]?.special === "cup"
-    ) {
-      await activateCup(index);
-      return;
-    }
-
-    if (selected === null) {
-      setSelected(index);
-
-      playGameSound(
-        "select",
-        soundEnabled
+    const indicesToClear =
+      getAreaBombClearIndices(
+        index
       );
-
-      vibrate(
-        15,
-        vibrationEnabled
-      );
-
-      return;
-    }
-
-    const first = selected;
-
-    if (first === index) {
-      setSelected(null);
-      return;
-    }
-
-    const row1 = Math.floor(
-      first / BOARD_SIZE
-    );
-
-    const col1 =
-      first % BOARD_SIZE;
-
-    const row2 = Math.floor(
-      index / BOARD_SIZE
-    );
-
-    const col2 =
-      index % BOARD_SIZE;
-
-    const isNeighbor =
-      Math.abs(row1 - row2) +
-        Math.abs(col1 - col2) ===
-      1;
-
-    if (!isNeighbor) {
-      setSelected(index);
-
-      playGameSound(
-        "select",
-        soundEnabled
-      );
-
-      vibrate(
-        15,
-        vibrationEnabled
-      );
-
-      return;
-    }
-
-    const swappedBoard = [...board];
-
-    [
-      swappedBoard[first],
-      swappedBoard[index],
-    ] = [
-      swappedBoard[index],
-      swappedBoard[first],
-    ];
-
-    const firstMatches =
-      findMatches(swappedBoard);
-
-    const createsMatch =
-      firstMatches.includes(first) ||
-      firstMatches.includes(index);
-
-    if (!createsMatch) {
-      setSelected(null);
-
-      playGameSound(
-        "invalid",
-        soundEnabled
-      );
-
-      vibrate(
-        [40, 30, 40],
-        vibrationEnabled
-      );
-
-      showMessage(
-        "GEÇERSİZ HAMLE",
-        0
-      );
-
-      return;
-    }
 
     setIsResolving(true);
     setSelected(null);
 
-    const explodingTileIds =
-      firstMatches
-        .map(
-          (matchedIndex) =>
-            swappedBoard[matchedIndex]?.id
-        )
-        .filter(
-          (id): id is string =>
-            Boolean(id)
-        );
+    playGameSound(
+      "combo",
+      soundEnabled
+    );
 
+    vibrate(
+      [90, 40, 160],
+      vibrationEnabled
+    );
+
+    const result =
+      await clearPowerUpArea(
+        board,
+        indicesToClear,
+        2
+      );
+
+    finishPowerUp(
+      result.board,
+      result.points
+    );
+
+    showMessage(
+      result.clearedCount > 9
+        ? "ZİNCİRLEME BOMBA! 💣💥"
+        : "ALAN BOMBASI! 💣",
+      result.points
+    );
+  }
+
+  async function activateAreaBombCombo(
+    centerIndex: number,
+    swappedBoard: TileType[]
+  ) {
+    const indicesToClear =
+      getAreaBombComboIndices(
+        centerIndex
+      );
+
+    setIsResolving(true);
+    setSelected(null);
     setBoard(swappedBoard);
 
-    setExplodingIds(
-      new Set(explodingTileIds)
+    playGameSound(
+      "combo",
+      soundEnabled
     );
+
+    vibrate(
+      [
+        120,
+        40,
+        160,
+        40,
+        220,
+      ],
+      vibrationEnabled
+    );
+
+    const result =
+      await clearPowerUpArea(
+        swappedBoard,
+        indicesToClear,
+        4
+      );
+
+    finishPowerUp(
+      result.board,
+      result.points
+    );
+
+    showMessage(
+      "MEGA BOMBA! 💣💣",
+      result.points
+    );
+  }
+
+  async function activateColorBombRocketCombo(
+    firstIndex: number,
+    secondIndex: number,
+    swappedBoard: TileType[]
+  ) {
+    const {
+      indicesToClear,
+      targetBall,
+      targetTileIndices,
+    } = getColorBombRocketResult(
+      board,
+      firstIndex,
+      secondIndex
+    );
+
+    setIsResolving(true);
+    setSelected(null);
+
+    const previewBoard =
+      swappedBoard.map(
+        (tile) => ({ ...tile })
+      );
+
+    targetTileIndices.forEach(
+      (tileIndex, order) => {
+        previewBoard[tileIndex] = {
+          ...previewBoard[tileIndex],
+          special:
+            order % 2 === 0
+              ? "rocket-horizontal"
+              : "rocket-vertical",
+        };
+      }
+    );
+
+    setBoard(previewBoard);
+
+    playGameSound(
+      "combo",
+      soundEnabled
+    );
+
+    vibrate(
+      [
+        80,
+        30,
+        100,
+        30,
+        120,
+        30,
+        180,
+      ],
+      vibrationEnabled
+    );
+
+    if (animationsEnabled) {
+      await wait(450);
+    }
+
+    const result =
+      await clearPowerUpArea(
+        previewBoard,
+        indicesToClear,
+        4
+      );
+
+    finishPowerUp(
+      result.board,
+      result.points
+    );
+
+    showMessage(
+      `${targetBall} ROKET YAĞMURU! 🌈🚀`,
+      result.points
+    );
+  }
+
+  async function activateColorBombAreaBombCombo(
+    firstIndex: number,
+    secondIndex: number,
+    swappedBoard: TileType[]
+  ) {
+    const {
+      targetBall,
+      targetTileIndices,
+      startingIndices,
+    } = getColorBombAreaBombResult(
+      board,
+      firstIndex,
+      secondIndex
+    );
+
+    setIsResolving(true);
+    setSelected(null);
+
+    const previewBoard =
+      swappedBoard.map(
+        (tile) => ({ ...tile })
+      );
+
+    targetTileIndices.forEach(
+      (tileIndex) => {
+        previewBoard[tileIndex] = {
+          ...previewBoard[tileIndex],
+          special: "area-bomb",
+        };
+      }
+    );
+
+    setBoard(previewBoard);
+
+    playGameSound(
+      "combo",
+      soundEnabled
+    );
+
+    vibrate(
+      [
+        100,
+        30,
+        120,
+        30,
+        160,
+        30,
+        220,
+      ],
+      vibrationEnabled
+    );
+
+    if (animationsEnabled) {
+      await wait(500);
+    }
+
+    const result =
+      await clearPowerUpArea(
+        previewBoard,
+        startingIndices,
+        5
+      );
+
+    finishPowerUp(
+      result.board,
+      result.points
+    );
+
+    showMessage(
+      `${targetBall} BOMBA YAĞMURU! 🌈💣`,
+      result.points
+    );
+  }
+
+  async function activateColorBomb(
+    firstIndex: number,
+    secondIndex: number,
+    swappedBoard: TileType[]
+  ) {
+    const {
+      indicesToClear,
+      targetBall,
+      bothAreColorBombs,
+    } = getColorBombResult(
+      board,
+      swappedBoard,
+      firstIndex,
+      secondIndex
+    );
+
+    setIsResolving(true);
+    setSelected(null);
+    setBoard(swappedBoard);
+
+    playGameSound(
+      "combo",
+      soundEnabled
+    );
+
+    vibrate(
+      [
+        80,
+        30,
+        80,
+        30,
+        140,
+      ],
+      vibrationEnabled
+    );
+
+    const result =
+      await clearPowerUpArea(
+        swappedBoard,
+        indicesToClear,
+        2
+      );
+
+    finishPowerUp(
+      result.board,
+      result.points
+    );
+
+    if (
+      bothAreColorBombs
+    ) {
+      showMessage(
+        "MEGA RENK PATLAMASI! 🌈🌈",
+        result.points
+      );
+
+      return;
+    }
+
+    showMessage(
+      `${targetBall} TOPLAR TEMİZLENDİ! 🌈`,
+      result.points
+    );
+  }
+
+  async function handleRegularMatch(
+    swappedBoard: TileType[],
+    preferredIndex: number,
+    matchedIndices: number[]
+  ) {
+    setIsResolving(true);
+    setSelected(null);
+    setBoard(swappedBoard);
 
     vibrate(
       35,
       vibrationEnabled
     );
 
-    if (animationsEnabled) {
-      await wait(EXPLOSION_DURATION);
-    }
-
-    setExplodingIds(new Set());
-
-    const result = resolveBoard(
+    await animateExplosion(
       swappedBoard,
-      index
+      matchedIndices
     );
+
+    const result =
+      resolveBoard(
+        swappedBoard,
+        preferredIndex,
+        currentLevel.balls
+      );
 
     setBoard(result.board);
 
@@ -496,12 +866,17 @@ export default function Board({
 
     setMoves(
       (currentMoves) =>
-        currentMoves - 1
+        Math.max(
+          0,
+          currentMoves - 1
+        )
     );
 
     setIsResolving(false);
 
-    if (result.comboCount >= 2) {
+    if (
+      result.comboCount >= 2
+    ) {
       playGameSound(
         "combo",
         soundEnabled
@@ -518,7 +893,9 @@ export default function Board({
       );
     }
 
-    if (result.comboCount >= 4) {
+    if (
+      result.comboCount >= 4
+    ) {
       showMessage(
         `EFSANEVİ COMBO x${result.comboCount}! 🏆`,
         result.scoreGain
@@ -545,6 +922,278 @@ export default function Board({
     }
   }
 
+  async function handleClick(
+    index: number
+  ) {
+    if (
+      moves === 0 ||
+      isResolving ||
+      isPaused
+    ) {
+      return;
+    }
+
+    if (selected === null) {
+      setSelected(index);
+
+      playGameSound(
+        "select",
+        soundEnabled
+      );
+
+      vibrate(
+        15,
+        vibrationEnabled
+      );
+
+      return;
+    }
+
+    const firstIndex =
+      selected;
+
+    if (
+      firstIndex === index
+    ) {
+      const selectedTile =
+        board[firstIndex];
+
+      if (
+        isRocket(selectedTile)
+      ) {
+        await activateRocket(
+          firstIndex
+        );
+
+        return;
+      }
+
+      if (
+        isAreaBomb(selectedTile)
+      ) {
+        await activateAreaBomb(
+          firstIndex
+        );
+
+        return;
+      }
+
+      setSelected(null);
+      return;
+    }
+
+    const firstRow =
+      Math.floor(
+        firstIndex /
+          BOARD_SIZE
+      );
+
+    const firstColumn =
+      firstIndex %
+      BOARD_SIZE;
+
+    const secondRow =
+      Math.floor(
+        index /
+          BOARD_SIZE
+      );
+
+    const secondColumn =
+      index %
+      BOARD_SIZE;
+
+    const isNeighbor =
+      Math.abs(
+        firstRow -
+          secondRow
+      ) +
+        Math.abs(
+          firstColumn -
+            secondColumn
+        ) ===
+      1;
+
+    if (!isNeighbor) {
+      setSelected(index);
+
+      playGameSound(
+        "select",
+        soundEnabled
+      );
+
+      vibrate(
+        15,
+        vibrationEnabled
+      );
+
+      return;
+    }
+
+    const swappedBoard = [
+      ...board,
+    ];
+
+    [
+      swappedBoard[firstIndex],
+      swappedBoard[index],
+    ] = [
+      swappedBoard[index],
+      swappedBoard[firstIndex],
+    ];
+
+    const firstTile =
+      board[firstIndex];
+
+    const secondTile =
+      board[index];
+
+    const bothAreRockets =
+      isRocket(firstTile) &&
+      isRocket(secondTile);
+
+    if (bothAreRockets) {
+      await activateRocketCombo(
+        firstIndex,
+        index,
+        swappedBoard
+      );
+
+      return;
+    }
+
+    const bothAreAreaBombs =
+      isAreaBomb(firstTile) &&
+      isAreaBomb(secondTile);
+
+    if (bothAreAreaBombs) {
+      await activateAreaBombCombo(
+        index,
+        swappedBoard
+      );
+
+      return;
+    }
+
+    const isRocketAreaBombCombo =
+      (
+        isRocket(firstTile) &&
+        isAreaBomb(secondTile)
+      ) ||
+      (
+        isAreaBomb(firstTile) &&
+        isRocket(secondTile)
+      );
+
+    if (
+      isRocketAreaBombCombo
+    ) {
+      await activateRocketAreaBombCombo(
+        index,
+        swappedBoard
+      );
+
+      return;
+    }
+
+    const isColorBombRocketCombo =
+      (
+        isColorBomb(firstTile) &&
+        isRocket(secondTile)
+      ) ||
+      (
+        isRocket(firstTile) &&
+        isColorBomb(secondTile)
+      );
+
+    if (
+      isColorBombRocketCombo
+    ) {
+      await activateColorBombRocketCombo(
+        firstIndex,
+        index,
+        swappedBoard
+      );
+
+      return;
+    }
+
+    const isColorBombAreaBombCombo =
+      (
+        isColorBomb(firstTile) &&
+        isAreaBomb(secondTile)
+      ) ||
+      (
+        isAreaBomb(firstTile) &&
+        isColorBomb(secondTile)
+      );
+
+    if (
+      isColorBombAreaBombCombo
+    ) {
+      await activateColorBombAreaBombCombo(
+        firstIndex,
+        index,
+        swappedBoard
+      );
+
+      return;
+    }
+
+    const includesColorBomb =
+      isColorBomb(firstTile) ||
+      isColorBomb(secondTile);
+
+    if (includesColorBomb) {
+      await activateColorBomb(
+        firstIndex,
+        index,
+        swappedBoard
+      );
+
+      return;
+    }
+
+    const matchedIndices =
+      findMatches(
+        swappedBoard
+      );
+
+    const createsMatch =
+      matchedIndices.includes(
+        firstIndex
+      ) ||
+      matchedIndices.includes(
+        index
+      );
+
+    if (!createsMatch) {
+      setSelected(null);
+
+      playGameSound(
+        "invalid",
+        soundEnabled
+      );
+
+      vibrate(
+        [40, 30, 40],
+        vibrationEnabled
+      );
+
+      showMessage(
+        "GEÇERSİZ HAMLE",
+        0
+      );
+
+      return;
+    }
+
+    await handleRegularMatch(
+      swappedBoard,
+      index,
+      matchedIndices
+    );
+  }
+
   return (
     <main className="min-h-screen w-full bg-gradient-to-b from-slate-950 via-indigo-950 to-slate-950 px-4 py-8">
       <div className="mx-auto flex w-full max-w-3xl flex-col items-center">
@@ -559,8 +1208,7 @@ export default function Board({
             </h1>
 
             <p className="mt-2 text-sm text-slate-300">
-              Topları eşleştir, kupaları kazan ve
-              arenaya hükmet.
+              {currentLevel.name}
             </p>
           </div>
 
@@ -568,7 +1216,8 @@ export default function Board({
             type="button"
             disabled={
               isResolving ||
-              moves === 0
+              moves === 0 ||
+              showTutorial
             }
             onClick={() => {
               setSelected(null);
@@ -583,6 +1232,7 @@ export default function Board({
         <ScorePanel
           score={score}
           moves={moves}
+          level={currentLevel}
         />
 
         <div className="relative rounded-[2rem] border border-white/10 bg-slate-900/80 p-3 shadow-2xl shadow-indigo-950/70 backdrop-blur-xl sm:p-5">
@@ -595,17 +1245,22 @@ export default function Board({
 
           <div className="grid grid-cols-8 gap-1.5 sm:gap-2">
             {board.map(
-              (tile, index) => (
+              (
+                tile,
+                tileIndex
+              ) => (
                 <Tile
                   key={tile.id}
                   tile={tile}
                   selected={
-                    selected === index
+                    selected ===
+                    tileIndex
                   }
                   disabled={
                     moves === 0 ||
                     isResolving ||
-                    isPaused
+                    isPaused ||
+                    showTutorial
                   }
                   exploding={
                     explodingIds.has(
@@ -616,7 +1271,9 @@ export default function Board({
                     animationsEnabled
                   }
                   onClick={() =>
-                    handleClick(index)
+                    handleClick(
+                      tileIndex
+                    )
                   }
                 />
               )
@@ -624,21 +1281,53 @@ export default function Board({
           </div>
         </div>
 
-        <div className="mt-4 flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300">
-          <span>🏆</span>
+        <div className="mt-4 flex max-w-xl flex-wrap items-center justify-center gap-2">
+          <div className="rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-bold text-yellow-100">
+            🎯 Hedef:{" "}
+            {currentLevel.targetScore}
+          </div>
 
-          <span>
-            Dörtlü eşleşme yap ve kupa
-            saldırısını kullan.
-          </span>
+          <div className="rounded-full border border-indigo-300/20 bg-indigo-300/10 px-4 py-2 text-xs font-bold text-indigo-100">
+            Toplar: {currentLevel.balls.join(" ")}
+          </div>
+
+          {levelId >= 7 && (
+            <div className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-xs font-bold text-cyan-100">
+              🧊 Buz: Darbe aldıkça katmanı azalır.
+            </div>
+          )}
+
+          <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-300">
+            ⭐ {currentLevel.starScores[0]}
+          </div>
+
+          <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-300">
+            ⭐⭐ {currentLevel.starScores[1]}
+          </div>
+
+          <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-300">
+            ⭐⭐⭐ {currentLevel.starScores[2]}
+          </div>
         </div>
+
+        {showTutorial && (
+          <TutorialModal
+            level={currentLevel}
+            onStart={() =>
+              setShowTutorial(false)
+            }
+            onExit={onExit}
+          />
+        )}
 
         {isPaused && (
           <PauseModal
             onResume={() =>
               setIsPaused(false)
             }
-            onRestart={restartGame}
+            onRestart={
+              restartGame
+            }
             onExit={onExit}
           />
         )}
@@ -646,8 +1335,11 @@ export default function Board({
         {moves === 0 && (
           <GameOverModal
             score={score}
+            level={currentLevel}
             reward={gameReward}
-            onRestart={restartGame}
+            onRestart={
+              restartGame
+            }
             onExit={onExit}
           />
         )}

@@ -7,12 +7,18 @@ import {
 
 import Board from "../components/Board";
 import DailyRewardModal from "../components/DailyRewardModal";
+import LevelSelectScreen from "../components/LevelSelectScreen";
 import MainMenu from "../components/MainMenu";
 import MissionsScreen from "../components/MissionsScreen";
 import SettingsScreen, {
   type GameSettings,
 } from "../components/SettingsScreen";
 import TournamentScreen from "../components/TournamentScreen";
+
+import {
+  DEFAULT_LEVEL_PROGRESS,
+  type LevelProgress,
+} from "../types/level";
 
 import {
   BASKETBALL_TARGET_SCORE,
@@ -25,8 +31,14 @@ import {
   type GameReward,
 } from "../types/progress";
 
+import {
+  LEVELS,
+  normalizeLevelProgress,
+} from "../utils/levels";
+
 type Screen =
   | "menu"
+  | "levels"
   | "game"
   | "settings"
   | "tournament"
@@ -39,6 +51,12 @@ const DEFAULT_SETTINGS: GameSettings = {
 };
 
 const DAILY_REWARD_COINS = 100;
+
+const LEVEL_PROGRESS_STORAGE_KEY =
+  "match-arena-level-progress";
+
+const SELECTED_LEVEL_STORAGE_KEY =
+  "match-arena-selected-level";
 
 function getTodayKey() {
   const today = new Date();
@@ -130,6 +148,18 @@ export default function Home() {
   const [screen, setScreen] =
     useState<Screen>("menu");
 
+  const [
+    selectedLevelId,
+    setSelectedLevelId,
+  ] = useState(1);
+
+  const [
+    levelProgress,
+    setLevelProgress,
+  ] = useState<LevelProgress>(
+    DEFAULT_LEVEL_PROGRESS
+  );
+
   const [settings, setSettings] =
     useState<GameSettings>(
       DEFAULT_SETTINGS
@@ -157,6 +187,16 @@ export default function Home() {
     const savedCareer =
       window.localStorage.getItem(
         "match-arena-career"
+      );
+
+    const savedLevelProgress =
+      window.localStorage.getItem(
+        LEVEL_PROGRESS_STORAGE_KEY
+      );
+
+    const savedSelectedLevel =
+      window.localStorage.getItem(
+        SELECTED_LEVEL_STORAGE_KEY
       );
 
     const lastDailyRewardDate =
@@ -230,6 +270,57 @@ export default function Home() {
       }
     }
 
+    let normalizedProgress =
+      DEFAULT_LEVEL_PROGRESS;
+
+    if (savedLevelProgress) {
+      try {
+        const parsedProgress =
+          JSON.parse(
+            savedLevelProgress
+          ) as Partial<LevelProgress>;
+
+        normalizedProgress =
+          normalizeLevelProgress(
+            parsedProgress
+          );
+      } catch {
+        window.localStorage.removeItem(
+          LEVEL_PROGRESS_STORAGE_KEY
+        );
+      }
+    }
+
+    setLevelProgress(
+      normalizedProgress
+    );
+
+    window.localStorage.setItem(
+      LEVEL_PROGRESS_STORAGE_KEY,
+      JSON.stringify(
+        normalizedProgress
+      )
+    );
+
+    if (savedSelectedLevel) {
+      const parsedLevelId =
+        Number(savedSelectedLevel);
+
+      const safeLevelId =
+        Number.isInteger(
+          parsedLevelId
+        )
+          ? Math.min(
+              normalizedProgress.unlockedLevel,
+              Math.max(1, parsedLevelId)
+            )
+          : 1;
+
+      setSelectedLevelId(
+        safeLevelId
+      );
+    }
+
     if (
       lastDailyRewardDate !==
       getTodayKey()
@@ -249,6 +340,92 @@ export default function Home() {
       "match-arena-career",
       JSON.stringify(newCareer)
     );
+  }
+
+  function saveLevelProgress(
+    newProgress: LevelProgress
+  ) {
+    setLevelProgress(newProgress);
+
+    window.localStorage.setItem(
+      LEVEL_PROGRESS_STORAGE_KEY,
+      JSON.stringify(newProgress)
+    );
+  }
+
+  function selectLevel(
+    levelId: number
+  ) {
+    const isUnlocked =
+      levelId <=
+      levelProgress.unlockedLevel;
+
+    const levelExists =
+      LEVELS.some(
+        (level) =>
+          level.id === levelId
+      );
+
+    if (!isUnlocked || !levelExists) {
+      return;
+    }
+
+    setSelectedLevelId(levelId);
+
+    window.localStorage.setItem(
+      SELECTED_LEVEL_STORAGE_KEY,
+      String(levelId)
+    );
+
+    setScreen("game");
+  }
+
+  function completeLevel(
+    levelId: number,
+    score: number,
+    stars: number
+  ) {
+    const safeScore = Math.max(0, score);
+    const safeStars = Math.min(
+      3,
+      Math.max(0, stars)
+    );
+
+    const previousStars =
+      levelProgress.starsByLevel[
+        levelId
+      ] ?? 0;
+
+    const previousBestScore =
+      levelProgress.bestScoresByLevel[
+        levelId
+      ] ?? 0;
+
+    const nextUnlockedLevel =
+      levelId < LEVELS.length
+        ? Math.max(
+            levelProgress.unlockedLevel,
+            levelId + 1
+          )
+        : levelProgress.unlockedLevel;
+
+    saveLevelProgress({
+      unlockedLevel: nextUnlockedLevel,
+      starsByLevel: {
+        ...levelProgress.starsByLevel,
+        [levelId]: Math.max(
+          previousStars,
+          safeStars
+        ),
+      },
+      bestScoresByLevel: {
+        ...levelProgress.bestScoresByLevel,
+        [levelId]: Math.max(
+          previousBestScore,
+          safeScore
+        ),
+      },
+    });
   }
 
   function claimDailyReward() {
@@ -425,6 +602,8 @@ export default function Home() {
   if (screen === "game") {
     return (
       <Board
+        key={selectedLevelId}
+        levelId={selectedLevelId}
         soundEnabled={
           settings.sound
         }
@@ -435,10 +614,28 @@ export default function Home() {
           settings.animations
         }
         onExit={() =>
-          setScreen("menu")
+          setScreen("levels")
         }
         onGameEnd={
           recordGameScore
+        }
+        onLevelComplete={
+          completeLevel
+        }
+      />
+    );
+  }
+
+  if (screen === "levels") {
+    return (
+      <LevelSelectScreen
+        progress={levelProgress}
+        selectedLevelId={
+          selectedLevelId
+        }
+        onSelectLevel={selectLevel}
+        onBack={() =>
+          setScreen("menu")
         }
       />
     );
@@ -468,7 +665,7 @@ export default function Home() {
           setScreen("menu")
         }
         onPlay={() =>
-          setScreen("game")
+          setScreen("levels")
         }
       />
     );
@@ -493,7 +690,7 @@ export default function Home() {
       <MainMenu
         career={career}
         onPlay={() =>
-          setScreen("game")
+          setScreen("levels")
         }
         onMissions={() =>
           setScreen("missions")

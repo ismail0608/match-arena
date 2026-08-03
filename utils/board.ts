@@ -1,15 +1,7 @@
 import type { Tile } from "../types/tile";
+import { addLevelObstacles } from "./obstacles";
 
-export const balls = [
-  "🏀",
-  "⚽",
-  "🏐",
-  "🎾",
-  "⚾",
-  "🏈",
-  "🏉",
-  "🥎",
-];
+export const DEFAULT_BALLS = ["🏀", "⚽", "🎾"];
 
 const BOARD_SIZE = 8;
 const EMPTY_BALL = "⬛";
@@ -18,15 +10,24 @@ function createId() {
   return crypto.randomUUID();
 }
 
-export function getRandomBall() {
-  return balls[Math.floor(Math.random() * balls.length)];
+function getSafeBalls(ballPool?: string[]) {
+  return ballPool && ballPool.length >= 3 ? ballPool : DEFAULT_BALLS;
 }
 
-export function createTile(ball = getRandomBall()): Tile {
+export function getRandomBall(ballPool: string[] = DEFAULT_BALLS) {
+  const safeBalls = getSafeBalls(ballPool);
+  return safeBalls[Math.floor(Math.random() * safeBalls.length)];
+}
+
+export function createTile(
+  ball = getRandomBall(),
+  ballPool: string[] = DEFAULT_BALLS
+): Tile {
   return {
     id: createId(),
-    ball,
+    ball: ball || getRandomBall(ballPool),
     special: null,
+    obstacle: null,
   };
 }
 
@@ -36,10 +37,10 @@ function createsStartingMatch(
   ball: string
 ) {
   const row = Math.floor(index / BOARD_SIZE);
-  const col = index % BOARD_SIZE;
+  const column = index % BOARD_SIZE;
 
   const createsHorizontalMatch =
-    col >= 2 &&
+    column >= 2 &&
     board[index - 1]?.ball === ball &&
     board[index - 2]?.ball === ball;
 
@@ -51,20 +52,24 @@ function createsStartingMatch(
   return createsHorizontalMatch || createsVerticalMatch;
 }
 
-export function createBoard(): Tile[] {
+export function createBoard(
+  levelId = 1,
+  ballPool: string[] = DEFAULT_BALLS
+): Tile[] {
+  const safeBalls = getSafeBalls(ballPool);
   const board: Tile[] = [];
 
   for (let index = 0; index < BOARD_SIZE * BOARD_SIZE; index++) {
-    let tile = createTile();
+    let ball = getRandomBall(safeBalls);
 
-    while (createsStartingMatch(board, index, tile.ball)) {
-      tile = createTile();
+    while (createsStartingMatch(board, index, ball)) {
+      ball = getRandomBall(safeBalls);
     }
 
-    board.push(tile);
+    board.push(createTile(ball, safeBalls));
   }
 
-  return board;
+  return addLevelObstacles(board, levelId);
 }
 
 export function createEmptyTile(): Tile {
@@ -72,17 +77,25 @@ export function createEmptyTile(): Tile {
     id: createId(),
     ball: EMPTY_BALL,
     special: null,
+    obstacle: null,
   };
 }
 
-export function dropBalls(board: Tile[]): Tile[] {
-  const newBoard = [...board];
+export function dropBalls(
+  board: Tile[],
+  ballPool: string[] = DEFAULT_BALLS
+): Tile[] {
+  const safeBalls = getSafeBalls(ballPool);
+  const newBoard = board.map((tile) => ({
+    ...tile,
+    obstacle: tile.obstacle ? { ...tile.obstacle } : null,
+  }));
 
-  for (let col = 0; col < BOARD_SIZE; col++) {
+  for (let column = 0; column < BOARD_SIZE; column++) {
     const remainingTiles: Tile[] = [];
 
     for (let row = 0; row < BOARD_SIZE; row++) {
-      const index = row * BOARD_SIZE + col;
+      const index = row * BOARD_SIZE + column;
       const tile = newBoard[index];
 
       if (tile.ball !== EMPTY_BALL) {
@@ -92,18 +105,14 @@ export function dropBalls(board: Tile[]): Tile[] {
 
     const emptyCount = BOARD_SIZE - remainingTiles.length;
 
-    const newTiles = Array.from(
-      { length: emptyCount },
-      () => createTile()
+    const newTiles = Array.from({ length: emptyCount }, () =>
+      createTile(getRandomBall(safeBalls), safeBalls)
     );
 
-    const completedColumn = [
-      ...newTiles,
-      ...remainingTiles,
-    ];
+    const completedColumn = [...newTiles, ...remainingTiles];
 
     for (let row = 0; row < BOARD_SIZE; row++) {
-      const index = row * BOARD_SIZE + col;
+      const index = row * BOARD_SIZE + column;
       newBoard[index] = completedColumn[row];
     }
   }

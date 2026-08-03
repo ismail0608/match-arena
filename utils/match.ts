@@ -1,6 +1,8 @@
 import type { Tile } from "../types/tile";
 
-export type MatchDirection = "horizontal" | "vertical";
+export type MatchDirection =
+  | "horizontal"
+  | "vertical";
 
 export type MatchGroup = {
   indices: number[];
@@ -10,76 +12,179 @@ export type MatchGroup = {
 const BOARD_SIZE = 8;
 const EMPTY_BALL = "⬛";
 
-export function findMatchGroups(board: Tile[]): MatchGroup[] {
+function isMatchableTile(
+  tile: Tile | undefined
+) {
+  return (
+    Boolean(tile) &&
+    tile?.ball !== EMPTY_BALL &&
+    tile?.special === null
+  );
+}
+
+export function findMatchGroups(
+  board: Tile[]
+): MatchGroup[] {
   const groups: MatchGroup[] = [];
 
   // Yatay eşleşmeler
-  for (let row = 0; row < BOARD_SIZE; row++) {
-    let startCol = 0;
+  for (
+    let row = 0;
+    row < BOARD_SIZE;
+    row++
+  ) {
+    let startColumn = 0;
 
-    while (startCol < BOARD_SIZE) {
-      const startIndex = row * BOARD_SIZE + startCol;
-      const ball = board[startIndex].ball;
+    while (
+      startColumn < BOARD_SIZE
+    ) {
+      const startIndex =
+        row * BOARD_SIZE +
+        startColumn;
 
-      let endCol = startCol + 1;
+      const startTile =
+        board[startIndex];
 
-      while (
-        endCol < BOARD_SIZE &&
-        ball !== EMPTY_BALL &&
-        board[row * BOARD_SIZE + endCol].ball === ball
+      if (
+        !isMatchableTile(startTile)
       ) {
-        endCol++;
+        startColumn++;
+        continue;
       }
 
-      const length = endCol - startCol;
+      const ball = startTile.ball;
 
-      if (ball !== EMPTY_BALL && length >= 3) {
-        const indices: number[] = [];
+      let endColumn =
+        startColumn + 1;
 
-        for (let col = startCol; col < endCol; col++) {
-          indices.push(row * BOARD_SIZE + col);
+      while (
+        endColumn < BOARD_SIZE
+      ) {
+        const currentIndex =
+          row * BOARD_SIZE +
+          endColumn;
+
+        const currentTile =
+          board[currentIndex];
+
+        if (
+          !isMatchableTile(
+            currentTile
+          ) ||
+          currentTile.ball !== ball
+        ) {
+          break;
+        }
+
+        endColumn++;
+      }
+
+      const matchLength =
+        endColumn - startColumn;
+
+      if (matchLength >= 3) {
+        const indices: number[] =
+          [];
+
+        for (
+          let column =
+            startColumn;
+          column < endColumn;
+          column++
+        ) {
+          indices.push(
+            row * BOARD_SIZE +
+              column
+          );
         }
 
         groups.push({
           indices,
-          direction: "horizontal",
+          direction:
+            "horizontal",
         });
       }
 
-      startCol = endCol;
+      startColumn =
+        endColumn;
     }
   }
 
   // Dikey eşleşmeler
-  for (let col = 0; col < BOARD_SIZE; col++) {
+  for (
+    let column = 0;
+    column < BOARD_SIZE;
+    column++
+  ) {
     let startRow = 0;
 
-    while (startRow < BOARD_SIZE) {
-      const startIndex = startRow * BOARD_SIZE + col;
-      const ball = board[startIndex].ball;
+    while (
+      startRow < BOARD_SIZE
+    ) {
+      const startIndex =
+        startRow * BOARD_SIZE +
+        column;
 
-      let endRow = startRow + 1;
+      const startTile =
+        board[startIndex];
+
+      if (
+        !isMatchableTile(startTile)
+      ) {
+        startRow++;
+        continue;
+      }
+
+      const ball = startTile.ball;
+
+      let endRow =
+        startRow + 1;
 
       while (
-        endRow < BOARD_SIZE &&
-        ball !== EMPTY_BALL &&
-        board[endRow * BOARD_SIZE + col].ball === ball
+        endRow < BOARD_SIZE
       ) {
+        const currentIndex =
+          endRow *
+            BOARD_SIZE +
+          column;
+
+        const currentTile =
+          board[currentIndex];
+
+        if (
+          !isMatchableTile(
+            currentTile
+          ) ||
+          currentTile.ball !== ball
+        ) {
+          break;
+        }
+
         endRow++;
       }
 
-      const length = endRow - startRow;
+      const matchLength =
+        endRow - startRow;
 
-      if (ball !== EMPTY_BALL && length >= 3) {
-        const indices: number[] = [];
+      if (matchLength >= 3) {
+        const indices: number[] =
+          [];
 
-        for (let row = startRow; row < endRow; row++) {
-          indices.push(row * BOARD_SIZE + col);
+        for (
+          let row = startRow;
+          row < endRow;
+          row++
+        ) {
+          indices.push(
+            row * BOARD_SIZE +
+              column
+          );
         }
 
         groups.push({
           indices,
-          direction: "vertical",
+          direction:
+            "vertical",
         });
       }
 
@@ -90,14 +195,21 @@ export function findMatchGroups(board: Tile[]): MatchGroup[] {
   return groups;
 }
 
-export function findMatches(board: Tile[]): number[] {
-  const groups = findMatchGroups(board);
-  const matches = new Set<number>();
+export function findMatches(
+  board: Tile[]
+): number[] {
+  const groups =
+    findMatchGroups(board);
+
+  const matches =
+    new Set<number>();
 
   groups.forEach((group) => {
-    group.indices.forEach((index) => {
-      matches.add(index);
-    });
+    group.indices.forEach(
+      (index) => {
+        matches.add(index);
+      }
+    );
   });
 
   return [...matches];
